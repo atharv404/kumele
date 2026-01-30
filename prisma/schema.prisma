@@ -48,11 +48,15 @@ enum EventStatus {
 }
 
 enum JoinStatus {
+  REQUESTED
+  MATCHED
   RESERVED
   PENDING_PAYMENT
+  CONFIRMED
   JOINED
   EXPIRED
-  CANCELED
+  CANCELLED
+  ATTENDED
   REFUNDED
 }
 
@@ -78,11 +82,13 @@ enum SubscriptionStatus {
   PAST_DUE
   PAUSED
   TRIALING
+  EXPIRED
 }
 
 enum ChatRoomStatus {
   ACTIVE
   CLOSED
+  DELETED
 }
 
 enum ModerationStatus {
@@ -173,6 +179,10 @@ model User {
   currentBadge      BadgeTier    @default(NONE)
   totalEventsAttended Int        @default(0)
   
+  // Stripe
+  stripeCustomerId         String?
+  stripeConnectedAccountId String?
+  
   // Timestamps
   lastLoginAt       DateTime?
   createdAt         DateTime     @default(now())
@@ -199,6 +209,8 @@ model User {
   adAccounts        AdAccount[]
   walletConnections WalletConnection[]
   rewardHistory     RewardHistory[]
+  refundRequests    RefundRequest[]
+  rewardDiscounts   RewardDiscount[]
 
   @@index([email])
   @@index([googleId])
@@ -267,6 +279,7 @@ model HobbyCategory {
   updatedAt   DateTime @updatedAt
   
   hobbies     Hobby[]
+  blogPosts   BlogPost[]
   
   @@index([slug])
   @@map("hobby_categories")
@@ -323,10 +336,11 @@ model Event {
   description     String
   coverImage      String?
   
-  // Location
-  address         String
-  city            String
-  country         String
+  // Location (OpenStreetMap compatible)
+  address         String?
+  displayAddress  String?
+  city            String?
+  country         String?
   latitude        Float
   longitude       Float
   venueName       String?
@@ -334,6 +348,8 @@ model Event {
   // Timing
   startsAt        DateTime
   endsAt          DateTime
+  eventStartTime  DateTime?    // Alias for startsAt (new API)
+  eventEndTime    DateTime?    // Alias for endsAt (new API)
   timezone        String       @default("UTC")
   
   // Capacity
@@ -341,12 +357,18 @@ model Event {
   minCapacity     Int          @default(2)
   currentCount    Int          @default(0)
   
-  // Pricing
+  // Pricing (EUR canonical)
+  isPaid          Boolean      @default(false)
+  basePriceEur    Decimal?     @db.Decimal(10, 2)
   price           Decimal      @default(0) @db.Decimal(10, 2)
-  currency        String       @default("USD")
+  currency        String       @default("EUR")
+  currencyBase    String       @default("EUR")
   
   // Status
   status          EventStatus  @default(DRAFT)
+  isCancelled     Boolean      @default(false)
+  cancelReason    String?
+  cancelledAt     DateTime?
   
   // Requirements
   minAge          Int?
@@ -397,12 +419,33 @@ model EventJoin {
   userId        String
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  status        JoinStatus @default(RESERVED)
+  status        JoinStatus @default(REQUESTED)
   reservedUntil DateTime?
   joinedAt      DateTime?
   
+  // Matching
+  matchScore          Float?
+  matchDecision       String?    // accept | reject | waitlist
+  matchedAt           DateTime?
+  matchingMode        String     @default("auto") // ml | fallback | auto
+  fallbackUsed        Boolean    @default(false)
+  
+  // Match finalization (Day 10)
+  matchFinalizedAt    DateTime?
+  matchFinalizedBy    String?    // system | admin
+  
+  // Payment window
+  paymentWindowStart  DateTime?
+  paymentExpiresAt    DateTime?
+  paymentCompletedAt  DateTime?
+  
+  // Cancellation
+  cancelledBy         String?    // host | guest | system
+  cancelledAt         DateTime?
+  cancelReason        String?
+  
   // Payment reference
-  paymentIntentId String?
+  paymentIntentId     String?
   
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -412,25 +455,43 @@ model EventJoin {
   @@index([userId])
   @@index([status])
   @@index([reservedUntil])
+  @@index([paymentExpiresAt])
   @@map("event_joins")
 }
 
+enum CheckinMethod {
+  HOST_VERIFIED
+  SELF_VERIFIED
+}
+
+enum CheckinStatus {
+  HOST_VERIFIED
+  SELF_VERIFIED
+  FAILED_DISTANCE
+}
+
 model Checkin {
-  id            String   @id @default(uuid())
+  id            String        @id @default(uuid())
   eventId       String
-  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event         Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
   userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   // Check-in method
-  method        String   // 'QR' or 'GPS'
+  method        CheckinMethod
+  status        CheckinStatus @default(HOST_VERIFIED)
+  
+  // Host who verified (for HOST_VERIFIED)
+  verifiedBy    String?
   
   // GPS data (for self check-in)
-  latitude      Float?
-  longitude     Float?
+  guestLat      Float?
+  guestLng      Float?
   distanceKm    Float?   // Actual distance from event
   
-  // QR data (for host check-in)
+  // Legacy fields for backwards compatibility
+  latitude      Float?
+  longitude     Float?
   scannedByHostId String?
   
   checkedInAt   DateTime @default(now())
@@ -444,43 +505,102 @@ model Checkin {
 // ==================== PAYMENTS ====================
 
 model PaymentIntent {
-  id               String         @id @default(uuid())
-  userId           String
-  user             User           @relation(fields: [userId], references: [id])
-  eventId          String?
-  event            Event?         @relation(fields: [eventId], references: [id])
+  id                  String         @id @default(uuid())
+  userId              String
+  user                User           @relation(fields: [userId], references: [id])
+  eventId             String?
+  event               Event?         @relation(fields: [eventId], references: [id])
   
   // Provider info
-  provider         PaymentProvider
-  providerIntentId String         @unique
+  provider            PaymentProvider @default(STRIPE)
+  providerIntentId    String?        @unique
+  stripeId            String?        @unique
   
   // Amount
-  amount           Decimal        @db.Decimal(10, 2)
-  currency         String         @default("USD")
+  amount              Decimal        @db.Decimal(10, 2)
+  amountMinor         Int            @default(0)  // Amount in cents
+  originalAmountMinor Int?
+  discountAmountMinor Int?
+  currency            String         @default("EUR")
+  
+  // Product info
+  productType         String         @default("EVENT")
   
   // Status
-  status           PaymentStatus  @default(PENDING)
+  status              PaymentStatus  @default(PENDING)
+  failureReason       String?
   
   // Escrow
-  capturedAt       DateTime?
-  releasedAt       DateTime?
+  capturedAt          DateTime?
+  releasedAt          DateTime?
   
   // Metadata
-  metadata         Json?
+  metadata            Json?
   
-  // Promo code
-  promoCodeId      String?
-  promoCode        PromoCode?     @relation(fields: [promoCodeId], references: [id])
-  discountAmount   Decimal?       @db.Decimal(10, 2)
+  // Promo code (legacy)
+  promoCodeId         String?
+  promoCode           PromoCode?     @relation(fields: [promoCodeId], references: [id])
+  discountAmount      Decimal?       @db.Decimal(10, 2)
   
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  // New discount relations
+  discountCodeId      String?
+  rewardDiscountId    String?
+  
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  
+  // Escrow relation
+  escrow              Escrow?
+  
+  // Refund requests
+  refundRequests      RefundRequest[]
   
   @@index([userId])
   @@index([eventId])
   @@index([providerIntentId])
+  @@index([stripeId])
   @@index([status])
   @@map("payment_intents")
+}
+
+// ==================== REFUND REQUESTS (Day 12) ====================
+
+enum RefundRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
+  FAILED
+}
+
+model RefundRequest {
+  id              String              @id @default(uuid())
+  paymentIntentId String
+  paymentIntent   PaymentIntent       @relation(fields: [paymentIntentId], references: [id])
+  userId          String
+  user            User                @relation(fields: [userId], references: [id])
+  
+  // Request details
+  reason          String
+  details         String?
+  amountMinor     Int
+  currency        String
+  
+  // Status
+  status          RefundRequestStatus @default(PENDING)
+  
+  // Admin processing
+  processedAt     DateTime?
+  processedBy     String?
+  adminNotes      String?
+  
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  @@index([paymentIntentId])
+  @@index([userId])
+  @@index([status])
+  @@map("refund_requests")
 }
 
 model PromoCode {
@@ -513,6 +633,148 @@ model PromoCode {
   @@map("promo_codes")
 }
 
+// ==================== ESCROW & PAYMENTS (Days 10-13) ====================
+
+enum EscrowStatus {
+  HELD        // Money captured, waiting for release conditions
+  SCHEDULED   // Release conditions met, queued for transfer
+  RELEASED    // Successfully transferred to host
+  FAILED      // Transfer failed after retry
+  REFUNDED    // Refund issued
+}
+
+model Escrow {
+  id                    String       @id @default(uuid())
+  paymentIntentId       String       @unique
+  paymentIntent         PaymentIntent @relation(fields: [paymentIntentId], references: [id])
+  eventId               String
+  hostId                String
+  
+  // Amount
+  amountMinor           Int          // Cents/kobo (integer)
+  currency              String
+  
+  // Stripe
+  stripeTransferId      String?
+  
+  // Gating conditions
+  attendanceVerified    Boolean      @default(false)
+  eventEndAt            DateTime
+  releaseAt             DateTime     // eventEndAt + 7 days
+  
+  // Status
+  status                EscrowStatus @default(HELD)
+  retryCount            Int          @default(0)
+  
+  // Timestamps
+  releasedAt            DateTime?
+  refundedAt            DateTime?
+  refundReason          String?
+  
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  
+  @@index([status])
+  @@index([releaseAt])
+  @@index([hostId])
+  @@index([eventId])
+  @@map("escrows")
+}
+
+model FXRate {
+  id          String   @id @default(uuid())
+  date        DateTime @db.Date
+  base        String   // EUR
+  rates       Json     // { "USD": 1.09, "NGN": 1650.50 }
+  source      String   // frankfurter | exchangeratesapi
+  createdAt   DateTime @default(now())
+
+  @@unique([date, base])
+  @@index([date])
+  @@map("fx_rates")
+}
+
+// ==================== DISCOUNTS (Day 12) ====================
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model DiscountCode {
+  id              String       @id @default(uuid())
+  code            String       @unique
+  type            DiscountType
+  value           Float        // Percentage (0-100) or fixed amount
+
+  // Eligibility
+  productTypes    String[]     // ['subscription', 'iap', 'event_fee']
+  minAmount       Int?         // Minimum purchase amount (minor units)
+  maxUses         Int?         // Global usage limit
+  maxUsesPerUser  Int          @default(1)
+
+  // Geography
+  allowedCountries String[]
+  allowedCities    String[]
+
+  // User segments
+  userSegments    String[]     // ['new_user', 'host', 'attendee']
+
+  // Status
+  isActive        Boolean      @default(true)
+  validFrom       DateTime
+  validUntil      DateTime
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  redemptions     DiscountRedemption[]
+
+  @@index([code])
+  @@index([isActive, validFrom, validUntil])
+  @@map("discount_codes")
+}
+
+model DiscountRedemption {
+  id          String       @id @default(uuid())
+  codeId      String
+  code        DiscountCode @relation(fields: [codeId], references: [id])
+  userId      String
+
+  // Redemption details
+  amountMinor Int
+  currency    String
+  productType String
+
+  createdAt   DateTime     @default(now())
+
+  @@index([userId, codeId])
+  @@map("discount_redemptions")
+}
+
+model RewardDiscount {
+  id          String       @id @default(uuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+
+  // Reward tier
+  rewardTier  String       // BRONZE | SILVER | GOLD
+
+  // Discount
+  type        DiscountType
+  value       Float
+
+  // Eligibility
+  expiresAt   DateTime
+  isRedeemed  Boolean      @default(false)
+  redeemedAt  DateTime?
+
+  createdAt   DateTime     @default(now())
+
+  @@index([userId, isRedeemed])
+  @@map("reward_discounts")
+}
+
 model Subscription {
   id                  String             @id @default(uuid())
   userId              String
@@ -521,7 +783,7 @@ model Subscription {
   // Provider info
   provider            PaymentProvider
   providerSubId       String             @unique
-  providerCustomerId  String
+  providerCustomerId  String?
   
   // Plan
   planId              String
@@ -529,11 +791,15 @@ model Subscription {
   
   // Status
   status              SubscriptionStatus @default(ACTIVE)
+  cancelAtPeriodEnd   Boolean            @default(false)
   
   // Billing
   currentPeriodStart  DateTime
   currentPeriodEnd    DateTime
   canceledAt          DateTime?
+  
+  // Entitlements (feature flags)
+  entitlements        Json?              // { location_change: true, boost: true }
   
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -552,6 +818,7 @@ model ChatRoom {
   event       Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
   
   status      ChatRoomStatus @default(ACTIVE)
+  openedAt    DateTime       @default(now())
   closesAt    DateTime
   closedAt    DateTime?
   
@@ -592,20 +859,31 @@ model BlogPost {
   
   title        String
   slug         String           @unique
-  content      String
+  content      String           @db.Text
   excerpt      String?
   coverImage   String?
+  coverImageUrl String?
+  
+  // Hobby category relation
+  hobbyCategoryId String?
+  hobbyCategory   HobbyCategory? @relation(fields: [hobbyCategoryId], references: [id])
+  language        String?
   
   // Relations to events
   eventId      String?
   
   // Moderation
-  moderation   ModerationStatus @default(PENDING)
+  moderation        ModerationStatus @default(PENDING)
+  moderationStatus  String           @default("PENDING") // PENDING | APPROVED | REJECTED
+  isFlagged         Boolean          @default(false)
   
   // Counts (denormalized for performance)
   likeCount    Int              @default(0)
+  likesCount   Int              @default(0)
   commentCount Int              @default(0)
+  commentsCount Int             @default(0)
   viewCount    Int              @default(0)
+  viewsCount   Int              @default(0)
   
   isPublished  Boolean          @default(false)
   publishedAt  DateTime?
@@ -619,6 +897,7 @@ model BlogPost {
   @@index([authorId])
   @@index([slug])
   @@index([moderation])
+  @@index([hobbyCategoryId])
   @@index([isPublished])
   @@index([createdAt])
   @@map("blog_posts")

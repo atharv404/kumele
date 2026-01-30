@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ScheduleModule } from '@nestjs/schedule';
 
 // Prisma
 import { PrismaModule } from './prisma/prisma.module';
@@ -11,6 +12,20 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { UploadModule } from './modules/upload/upload.module';
+
+// Days 6-9 Feature Modules
+import { EventsModule } from './modules/events/events.module';
+import { HobbiesModule } from './modules/hobbies/hobbies.module';
+import { BlogsModule } from './modules/blogs/blogs.module';
+import { JobsModule } from './modules/jobs/jobs.module';
+
+// Days 10-13 Feature Modules
+import { ChatModule } from './modules/chat/chat.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { DiscountsModule } from './modules/discounts/discounts.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { RefundsModule } from './modules/refunds/refunds.module';
 
 // Redis cache store
 import { redisStore } from 'cache-manager-ioredis-yet';
@@ -53,10 +68,27 @@ import { redisStore } from 'cache-manager-ioredis-yet';
     // Prisma
     PrismaModule,
 
-    // Feature Modules
+    // Scheduling for cron jobs
+    ScheduleModule.forRoot(),
+
+    // Feature Modules (Days 1-5)
     HealthModule,
     AuthModule,
     UsersModule,
+    UploadModule,
+
+    // Feature Modules (Days 6-9)
+    EventsModule,
+    HobbiesModule,
+    BlogsModule,
+    JobsModule,
+
+    // Feature Modules (Days 10-13)
+    ChatModule,
+    PaymentsModule,
+    DiscountsModule,
+    SubscriptionsModule,
+    RefundsModule,
   ],
   providers: [
     // Global rate limiting guard

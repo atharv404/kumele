@@ -13,6 +13,5 @@ module.exports = {
     '^@common/(.*)$': '<rootDir>/common/$1',
     '^@modules/(.*)$': '<rootDir>/modules/$1',
     '^@config/(.*)$': '<rootDir>/config/$1',
-    '^@prisma/(.*)$': '<rootDir>/prisma/$1',
   },
 };

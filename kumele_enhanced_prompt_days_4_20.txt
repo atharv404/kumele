@@ -1,0 +1,1000 @@
+
+# KUMELE BACKEND PROJECT - ENHANCED AI AGENT CONTEXT (Days 4-20)
+
+## IMPORTANT: You've completed Days 1-3. This is the enhanced context for Days 4-20.
+
+---
+
+## 🔄 CROSS-TEAM INTEGRATION CONTEXT
+
+Your backend must integrate with 4 other specialized teams. Here's how your APIs will be consumed:
+
+### 1. AI/ML Team Integration
+**Your Backend Provides** → **AI/ML Team Consumes**
+
+You expose these endpoints for ML model training and inference:
+- `POST /ml/events/features` - Event feature vectors for matching
+- `POST /ml/users/features` - User behavior aggregation
+- `GET /ml/match/candidates` - Pre-filtered candidate pool
+- `POST /ml/feedback` - Match outcome feedback (attended/canceled)
+
+**AI/ML Team Returns** → **You Store & Use**
+- Ranked user-event matches with confidence scores
+- Ad targeting recommendations
+- Blog relevance scores
+- Dynamic pricing suggestions
+
+**Integration Points**:
+```typescript
+// Your backend triggers ML matching
+const mlResponse = await axios.post('http://ml-service:8000/match', {
+  userId: user.id,
+  userHobbies: user.hobbies,
+  location: { lat: user.lat, lon: user.lon },
+  radiusKm: user.radiusKm,
+  rewardTier: user.rewardTier,
+  engagementHistory: {
+    eventsAttended: user.stats.eventsAttended,
+    blogReads: user.stats.blogReads,
+    adClicks: user.stats.adClicks
+  }
+});
+
+// ML returns ranked matches
+const rankedEvents = mlResponse.data.matches.map(m => ({
+  eventId: m.event_id,
+  score: m.confidence_score,
+  reasons: m.match_reasons
+}));
+```
+
+**Critical ML Flow Requirements**:
+1. **Feature Aggregation**: Your backend must track and aggregate:
+   - Hobbies (with weights 1-5)
+   - Event tags
+   - Location + radius preferences
+   - Engagement history (joins, attendance, cancellations)
+   - Reward tier (Bronze/Silver/Gold as trust signal)
+   - Ad interactions (clicks, impressions)
+   - Blog interactions (reads, likes, comments)
+
+2. **Embedding Support**: Store embedding vectors from HuggingFace:
+```prisma
+model UserEmbedding {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  vector    Float[]  // Array of 384 floats (sentence-transformers/all-MiniLM-L6-v2)
+  updatedAt DateTime @updatedAt
+}
+
+model EventEmbedding {
+  id        String   @id @default(cuid())
+  eventId   String   @unique
+  vector    Float[]
+  updatedAt DateTime @updatedAt
+}
+```
+
+3. **Match Logging**: Every match must be logged for ML feedback:
+```prisma
+model MatchLog {
+  id          String   @id @default(cuid())
+  userId      String
+  eventId     String
+  score       Float
+  reasons     Json
+  outcome     String?  // JOINED | IGNORED | EXPIRED | ATTENDED | CANCELED
+  createdAt   DateTime @default(now())
+  @@index([userId, eventId])
+}
+```
+
+4. **No Race Conditions**: Enforce strict order:
+   - Match → Chat Creation → Payment Window (10 min) → Join Confirmed
+
+---
+
+### 2. Web3 Team Integration (MANDATORY)
+
+**Escrow is NOT Optional** - Every paid event MUST use escrow logic.
+
+**Your Backend Responsibilities**:
+
+1. **Dual Payment Support**:
+```typescript
+enum PaymentProvider {
+  STRIPE    // Primary: USD/EUR via cards
+  PAYPAL    // Backup: USD/EUR
+  COINBASE  // Web3: SOL blockchain with USD/EUR pricing display
+}
+```
+
+2. **Escrow Smart Logic** (you implement, Web3 team handles blockchain):
+```typescript
+// On event join with payment
+async createEscrowPayment(joinId: string, amount: number, currency: string) {
+  // Step 1: Lock funds
+  const escrow = await prisma.escrowTransaction.create({
+    data: {
+      joinId,
+      amountCents: amount,
+      currency,
+      status: 'LOCKED',
+      lockedAt: new Date()
+    }
+  });
+
+  // Step 2: Create payment intent (Stripe/Coinbase)
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount,
+    currency: currency.toLowerCase(),
+    capture_method: 'manual', // Don't capture yet!
+    metadata: { escrowId: escrow.id, joinId }
+  });
+
+  return escrow;
+}
+
+// Release conditions (ALL must be true)
+async canReleaseEscrow(joinId: string): Promise<boolean> {
+  const join = await prisma.eventJoin.findUnique({
+    where: { id: joinId },
+    include: {
+      event: true,
+      checkin: true,
+      escrow: true
+    }
+  });
+
+  // Check all conditions
+  const checks = [
+    join.event.status === 'COMPLETED',
+    join.checkin !== null,
+    join.escrow.status === 'LOCKED',
+    (Date.now() - join.event.endsAt.getTime()) > 48 * 60 * 60 * 1000 // 48h passed
+  ];
+
+  return checks.every(c => c === true);
+}
+
+// Release escrow
+async releaseEscrow(escrowId: string) {
+  const escrow = await prisma.escrowTransaction.findUnique({
+    where: { id: escrowId },
+    include: { join: { include: { event: true }}}
+  });
+
+  // Capture payment
+  await stripe.paymentIntents.capture(escrow.providerRef);
+
+  // Update escrow status
+  await prisma.escrowTransaction.update({
+    where: { id: escrowId },
+    data: {
+      status: 'RELEASED',
+      releasedAt: new Date()
+    }
+  });
+
+  // Calculate platform fee (e.g., 10%)
+  const platformFee = Math.floor(escrow.amountCents * 0.10);
+  const hostPayout = escrow.amountCents - platformFee;
+
+  // Create payout record
+  await prisma.payout.create({
+    data: {
+      hostId: escrow.join.event.hostId,
+      amountCents: hostPayout,
+      platformFeeCents: platformFee,
+      escrowId: escrow.id,
+      status: 'PENDING'
+    }
+  });
+}
+```
+
+3. **Refund Logic**:
+```typescript
+async handleRefund(joinId: string, reason: string) {
+  const escrow = await prisma.escrowTransaction.findFirst({
+    where: { joinId },
+    include: { join: { include: { event: true }}}
+  });
+
+  if (escrow.status === 'LOCKED') {
+    // Cancel payment intent (Stripe) or refund (Coinbase)
+    await stripe.paymentIntents.cancel(escrow.providerRef);
+
+    await prisma.escrowTransaction.update({
+      where: { id: escrow.id },
+      data: {
+        status: 'REFUNDED',
+        refundReason: reason,
+        refundedAt: new Date()
+      }
+    });
+  }
+}
+```
+
+4. **NFT & In-App Purchases**:
+```prisma
+model NFT {
+  id          String   @id @default(cuid())
+  type        String   // BADGE | MUSIC | SPECIAL
+  name        String
+  description String?
+  imageUrl    String
+  mintAddress String?  // Solana mint address (Web3 team provides)
+  priceCents  Int
+  currency    String
+  createdAt   DateTime @default(now())
+  ownership   NFTOwnership[]
+}
+
+model NFTOwnership {
+  id          String   @id @default(cuid())
+  userId      String
+  nftId       String
+  purchaseId  String?
+  walletAddress String?
+  acquiredAt  DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+  nft         NFT      @relation(fields: [nftId], references: [id])
+  @@unique([userId, nftId])
+}
+
+model InAppPurchase {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // SUBSCRIPTION | LOCATION_CHANGE | BOOST
+  priceCents  Int
+  currency    String
+  provider    PaymentProvider
+  providerRef String
+  status      String   // PENDING | COMPLETED | FAILED
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+}
+```
+
+5. **Wallet Integration**:
+```prisma
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  address   String   @unique
+  provider  String   @default("COINBASE") // Future: METAMASK, PHANTOM
+  connectedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+```
+
+**Web3 Team Provides These Endpoints** (you call them):
+- `POST /web3/mint-nft` - Mint NFT on blockchain
+- `POST /web3/verify-ownership` - Verify NFT ownership
+- `GET /web3/wallet/:address/nfts` - Get user's NFTs
+
+---
+
+### 3. Frontend Teams Integration (iOS/Flutter/Next.js)
+
+**Your API Contract Standards**:
+
+1. **Consistent Response Format**:
+```typescript
+// Success response
+{
+  "ok": true,
+  "data": { /* actual data */ },
+  "meta": {
+    "page": 1,
+    "limit": 20,
+    "total": 150,
+    "hasNext": true
+  }
+}
+
+// Error response
+{
+  "ok": false,
+  "statusCode": 400,
+  "error": "ValidationError",
+  "message": ["email must be valid", "name is required"],
+  "path": "/api/users",
+  "timestamp": "2026-01-19T14:30:00Z",
+  "requestId": "req_abc123"
+}
+```
+
+2. **Pagination Standard**:
+```typescript
+interface PaginationQuery {
+  page?: number;      // Default: 1
+  limit?: number;     // Default: 20, Max: 100
+  sortBy?: string;    // e.g., "createdAt"
+  sortOrder?: "asc" | "desc";
+}
+
+// Always return meta
+interface PaginatedResponse<T> {
+  ok: true;
+  data: T[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
+}
+```
+
+3. **Image/File URLs** (always full URLs):
+```json
+{
+  "avatarUrl": "https://cdn.kumele.com/avatars/user_123.jpg",
+  "eventBannerUrl": "https://cdn.kumele.com/events/event_456.jpg",
+  "qrCodeUrl": "https://cdn.kumele.com/qr/user_123.png"
+}
+```
+
+4. **Deep Link Format** (for push notifications):
+```typescript
+// Event deep link
+kumele://events/{eventId}
+
+// Blog deep link
+kumele://blogs/{blogId}
+
+// Profile deep link
+kumele://users/{userId}
+
+// Chat deep link
+kumele://chat/{eventId}
+```
+
+5. **WebSocket Events** (for chat):
+```typescript
+// Client → Server
+interface ClientEvents {
+  join_room: { eventId: string; token: string };
+  send_message: { eventId: string; body: string };
+  typing_start: { eventId: string };
+  typing_stop: { eventId: string };
+}
+
+// Server → Client
+interface ServerEvents {
+  message_received: {
+    id: string;
+    senderId: string;
+    senderName: string;
+    senderAvatar: string;
+    body: string;
+    createdAt: string;
+  };
+  user_joined: { userId: string; userName: string };
+  user_left: { userId: string };
+  user_typing: { userId: string; userName: string };
+  room_closed: { reason: string };
+}
+```
+
+---
+
+### 4. Product/UX Team Requirements
+
+**UX Guarantees You Must Enforce**:
+
+1. **No Chat Without Match**:
+```typescript
+// Before allowing chat access
+async verifyChatAccess(userId: string, eventId: string) {
+  const join = await prisma.eventJoin.findFirst({
+    where: {
+      userId,
+      eventId,
+      status: { in: ['JOINED', 'PENDING_PAYMENT'] }
+    }
+  });
+
+  if (!join) {
+    throw new ForbiddenException('You must join this event to access chat');
+  }
+
+  return true;
+}
+```
+
+2. **No Review Without Attendance**:
+```typescript
+// Before allowing review creation
+async verifyReviewAccess(userId: string, eventId: string) {
+  const checkin = await prisma.checkin.findUnique({
+    where: { eventId_userId: { eventId, userId }}
+  });
+
+  if (!checkin) {
+    throw new ForbiddenException('You must attend the event to leave a review');
+  }
+
+  return true;
+}
+```
+
+3. **No Rewards Without Check-in**:
+```typescript
+// Only count attended events for reward calculation
+async calculateRewardTier(userId: string): Promise<RewardTier> {
+  // Get events attended (checked in) in last 30 days
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const attendedCount = await prisma.checkin.count({
+    where: {
+      userId,
+      createdAt: { gte: thirtyDaysAgo },
+      event: { status: 'COMPLETED' }
+    }
+  });
+
+  if (attendedCount >= 15) return 'GOLD';
+  if (attendedCount >= 8) return 'SILVER';
+  if (attendedCount >= 3) return 'BRONZE';
+  return 'NONE';
+}
+```
+
+4. **No Silent Cancellations** (rating impact):
+```typescript
+// When host cancels event
+async cancelEvent(eventId: string, hostId: string, reason: string) {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: { joins: true }
+  });
+
+  if (event.status !== 'ACTIVE') {
+    throw new BadRequestException('Only active events can be canceled');
+  }
+
+  // Update event status
+  await prisma.event.update({
+    where: { id: eventId },
+    data: {
+      status: 'CANCELED',
+      cancelReason: reason,
+      canceledAt: new Date()
+    }
+  });
+
+  // Penalize host reputation
+  await prisma.user.update({
+    where: { id: hostId },
+    data: {
+      cancellationCount: { increment: 1 },
+      reputationScore: { decrement: 10 }
+    }
+  });
+
+  // Refund all participants
+  for (const join of event.joins) {
+    if (join.status === 'JOINED' && join.payment) {
+      await this.handleRefund(join.id, 'Event canceled by host');
+    }
+  }
+
+  // Notify all participants
+  await this.notifyEventCanceled(event.id, reason);
+}
+```
+
+---
+
+## 📊 ENHANCED DATABASE SCHEMA (Additional Tables)
+
+Add these to your existing Prisma schema:
+
+```prisma
+// ML & AI Support
+model UserEmbedding {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  vector    Float[]
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model EventEmbedding {
+  id        String   @id @default(cuid())
+  eventId   String   @unique
+  vector    Float[]
+  updatedAt DateTime @updatedAt
+  event     Event    @relation(fields: [eventId], references: [id])
+}
+
+model MatchLog {
+  id          String   @id @default(cuid())
+  userId      String
+  eventId     String
+  score       Float
+  reasons     Json
+  outcome     String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+  event       Event    @relation(fields: [eventId], references: [id])
+  @@index([userId, eventId])
+}
+
+model UserStats {
+  userId           String   @id
+  eventsAttended   Int      @default(0)
+  eventsHosted     Int      @default(0)
+  eventsCanceled   Int      @default(0)
+  blogReads        Int      @default(0)
+  blogPosts        Int      @default(0)
+  adClicks         Int      @default(0)
+  reputationScore  Float    @default(100)
+  cancellationCount Int     @default(0)
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id])
+}
+
+// Web3 & Payments
+model Wallet {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  address     String   @unique
+  provider    String   @default("COINBASE")
+  connectedAt DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model EscrowTransaction {
+  id            String          @id @default(cuid())
+  joinId        String          @unique
+  amountCents   Int
+  currency      String
+  status        String          // LOCKED | RELEASED | REFUNDED
+  provider      PaymentProvider
+  providerRef   String?
+  lockedAt      DateTime        @default(now())
+  releasedAt    DateTime?
+  refundedAt    DateTime?
+  refundReason  String?
+  join          EventJoin       @relation(fields: [joinId], references: [id])
+}
+
+model Payout {
+  id                String   @id @default(cuid())
+  hostId            String
+  amountCents       Int
+  platformFeeCents  Int
+  escrowId          String
+  status            String   // PENDING | COMPLETED | FAILED
+  processedAt       DateTime?
+  createdAt         DateTime @default(now())
+  host              User     @relation(fields: [hostId], references: [id])
+}
+
+model NFT {
+  id          String         @id @default(cuid())
+  type        String         // BADGE | MUSIC | SPECIAL
+  name        String
+  description String?
+  imageUrl    String
+  mintAddress String?
+  priceCents  Int
+  currency    String
+  createdAt   DateTime       @default(now())
+  ownership   NFTOwnership[]
+}
+
+model NFTOwnership {
+  id            String   @id @default(cuid())
+  userId        String
+  nftId         String
+  purchaseId    String?
+  walletAddress String?
+  acquiredAt    DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id])
+  nft           NFT      @relation(fields: [nftId], references: [id])
+  @@unique([userId, nftId])
+}
+
+model InAppPurchase {
+  id          String          @id @default(cuid())
+  userId      String
+  type        String
+  priceCents  Int
+  currency    String
+  provider    PaymentProvider
+  providerRef String
+  status      String
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+  user        User            @relation(fields: [userId], references: [id])
+}
+
+// Tracking & Analytics
+model BlogInteraction {
+  id        String   @id @default(cuid())
+  userId    String
+  blogId    String
+  type      String   // VIEW | LIKE | COMMENT
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  blog      BlogPost @relation(fields: [blogId], references: [id])
+  @@index([userId, blogId, type])
+}
+
+model AdInteraction {
+  id         String   @id @default(cuid())
+  userId     String
+  campaignId String
+  type       String   // IMPRESSION | CLICK | CONVERSION
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+  campaign   AdCampaign @relation(fields: [campaignId], references: [id])
+  @@index([userId, campaignId, type])
+}
+
+// System
+model SystemConfig {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+```
+
+---
+
+## 🔥 CRITICAL IMPLEMENTATION NOTES (Days 4-20)
+
+### Day 4-6: Events & Matching
+**New Requirement**: Integrate with ML service for matching
+
+```typescript
+// EventsService - enhanced matching
+async getMatchedEvents(userId: string) {
+  // 1. Get user context
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      profile: { include: { hobbies: true }},
+      stats: true
+    }
+  });
+
+  // 2. Call ML service
+  const mlMatches = await axios.post('http://ml-service:8000/match', {
+    userId: user.id,
+    features: {
+      hobbies: user.profile.hobbies.map(h => h.hobbyId),
+      location: { lat: user.profile.lat, lon: user.profile.lon },
+      radiusKm: user.profile.radiusKm,
+      rewardTier: user.rewardTier,
+      stats: user.stats
+    }
+  });
+
+  // 3. Fetch full event details
+  const eventIds = mlMatches.data.matches.map(m => m.event_id);
+  const events = await this.prisma.event.findMany({
+    where: { id: { in: eventIds }},
+    include: { host: true, hobbies: true }
+  });
+
+  // 4. Log matches for ML feedback
+  await this.prisma.matchLog.createMany({
+    data: mlMatches.data.matches.map(m => ({
+      userId: user.id,
+      eventId: m.event_id,
+      score: m.confidence_score,
+      reasons: m.match_reasons
+    }))
+  });
+
+  return events;
+}
+```
+
+### Day 7-8: Check-in System
+**Enhanced**: Track distance and method for analytics
+
+```typescript
+// CheckinService
+async selfCheckin(userId: string, eventId: string, lat: number, lon: number) {
+  const event = await this.prisma.event.findUnique({
+    where: { id: eventId }
+  });
+
+  // Calculate distance
+  const distance = this.haversineDistance(
+    lat, lon,
+    event.lat, event.lon
+  );
+
+  // Validate distance
+  if (distance > 2.0) {
+    throw new ForbiddenException(
+      `You are ${distance.toFixed(2)}km away. Must be within 2km to check in.`
+    );
+  }
+
+  // Create check-in
+  const checkin = await this.prisma.checkin.create({
+    data: {
+      userId,
+      eventId,
+      method: 'SELF_GPS',
+      lat,
+      lon,
+      distanceKm: distance
+    }
+  });
+
+  // Update user stats
+  await this.prisma.userStats.update({
+    where: { userId },
+    data: { eventsAttended: { increment: 1 }}
+  });
+
+  return checkin;
+}
+```
+
+### Day 11-13: Payments & Escrow
+**Enhanced**: Full escrow lifecycle with Web3 support
+
+```typescript
+// PaymentsService
+async processEventPayment(
+  joinId: string,
+  paymentMethodId: string,
+  provider: 'STRIPE' | 'COINBASE'
+) {
+  const join = await this.prisma.eventJoin.findUnique({
+    where: { id: joinId },
+    include: { event: true, user: true }
+  });
+
+  // Create escrow transaction
+  const escrow = await this.prisma.escrowTransaction.create({
+    data: {
+      joinId,
+      amountCents: join.event.priceCents,
+      currency: join.event.currency,
+      status: 'LOCKED',
+      provider
+    }
+  });
+
+  // Process payment based on provider
+  if (provider === 'STRIPE') {
+    const paymentIntent = await this.stripe.paymentIntents.create({
+      amount: join.event.priceCents,
+      currency: join.event.currency.toLowerCase(),
+      payment_method: paymentMethodId,
+      capture_method: 'manual', // Escrow mode
+      confirm: true,
+      metadata: {
+        escrowId: escrow.id,
+        joinId: join.id,
+        eventId: join.event.id,
+        userId: join.user.id
+      }
+    });
+
+    await this.prisma.escrowTransaction.update({
+      where: { id: escrow.id },
+      data: { providerRef: paymentIntent.id }
+    });
+
+  } else if (provider === 'COINBASE') {
+    // Call Web3 service
+    const charge = await axios.post('http://web3-service:8000/create-charge', {
+      amount: join.event.priceCents / 100,
+      currency: join.event.currency,
+      metadata: {
+        escrowId: escrow.id,
+        joinId: join.id
+      }
+    });
+
+    await this.prisma.escrowTransaction.update({
+      where: { id: escrow.id },
+      data: { providerRef: charge.data.id }
+    });
+  }
+
+  // Update join status
+  await this.prisma.eventJoin.update({
+    where: { id: joinId },
+    data: { status: 'JOINED' }
+  });
+
+  return escrow;
+}
+```
+
+### Day 14-15: Chat & Notifications
+**Enhanced**: Multi-device push with deep links
+
+```typescript
+// NotificationsService
+async sendEventReminder(eventId: string) {
+  const event = await this.prisma.event.findUnique({
+    where: { id: eventId },
+    include: {
+      joins: {
+        where: { status: 'JOINED' },
+        include: { user: { include: { devices: true }}}
+      }
+    }
+  });
+
+  for (const join of event.joins) {
+    const tokens = join.user.devices
+      .filter(d => d.pushToken)
+      .map(d => d.pushToken);
+
+    if (tokens.length > 0) {
+      await this.firebaseAdmin.messaging().sendMulticast({
+        tokens,
+        notification: {
+          title: '📅 Event Reminder',
+          body: `${event.title} starts in 1 hour!`
+        },
+        data: {
+          type: 'EVENT_REMINDER',
+          eventId: event.id,
+          deepLink: `kumele://events/${event.id}`
+        }
+      });
+
+      // Create notification record
+      await this.prisma.notification.create({
+        data: {
+          userId: join.user.id,
+          type: 'EVENT_REMINDER',
+          title: 'Event Reminder',
+          body: `${event.title} starts in 1 hour!`,
+          data: { eventId: event.id }
+        }
+      });
+    }
+  }
+}
+```
+
+---
+
+## 🎯 ENHANCED API ENDPOINTS (Days 4-20)
+
+### ML Integration Endpoints (Internal/Admin)
+```typescript
+// For ML service to fetch training data
+GET  /ml/events/features
+GET  /ml/users/features
+POST /ml/match/feedback
+GET  /ml/interactions/export
+```
+
+### Web3 Integration Endpoints
+```typescript
+POST /web3/wallet/connect
+GET  /web3/wallet/:userId
+POST /web3/nft/purchase
+GET  /web3/nft/:userId/owned
+POST /web3/escrow/create
+POST /web3/escrow/:id/release
+POST /web3/escrow/:id/refund
+```
+
+### Enhanced Event Endpoints
+```typescript
+GET  /events/matched        // ML-powered matching
+GET  /events/:id/analytics  // Host view: attendance, revenue
+POST /events/:id/duplicate  // Clone event
+GET  /events/trending       // ML-powered trending events
+```
+
+### Enhanced User Endpoints
+```typescript
+GET  /users/:id/stats       // Detailed stats
+GET  /users/:id/reputation  // Reputation score breakdown
+POST /users/:id/block       // Block user
+GET  /users/:id/activity    // Activity feed
+```
+
+### Analytics Endpoints (Admin)
+```typescript
+GET  /analytics/events      // Event analytics
+GET  /analytics/users       // User growth
+GET  /analytics/revenue     // Revenue dashboard
+GET  /analytics/ml          // ML model performance
+```
+
+---
+
+## 🚀 DAYS 4-20 QUICK CHECKLIST
+
+**Week 2 (Days 4-10)**:
+- [ ] Day 4: User profile + QR with enhanced stats tracking
+- [ ] Day 5: Rewards read-only with tier calculation logic
+- [ ] Day 6: Events CRUD with ML matching integration
+- [ ] Day 7: Event participation with 10-min payment window
+- [ ] Day 8: Check-in system (QR + GPS) with distance tracking
+- [ ] Day 9: Blogs with interaction tracking for ML
+- [ ] Day 10: Matching algorithm refinement + ML feedback loop
+
+**Week 3 (Days 11-15)**:
+- [ ] Day 11: Payments (Stripe + PayPal) with escrow
+- [ ] Day 12: Discounts + subscriptions + refund eligibility
+- [ ] Day 13: Chat (Socket.IO) with auto-lifecycle
+- [ ] Day 14: Notifications (Firebase + Email) with deep links
+- [ ] Day 15: Ads with targeting and ML integration
+
+**Week 4 (Days 16-20)**:
+- [ ] Day 16: Admin APIs with moderation queue
+- [ ] Day 17: Utilities (upload, localization, config)
+- [ ] Day 18: Support & feedback system
+- [ ] Day 19: Monitoring (Prometheus + logs)
+- [ ] Day 20: CI/CD + AWS deployment
+
+---
+
+## 📝 UPDATED ENVIRONMENT VARIABLES
+
+Add these to your `.env`:
+
+```bash
+# ML Service
+ML_SERVICE_URL=http://ml-service:8000
+ML_API_KEY=your_ml_api_key
+
+# Web3 Service
+WEB3_SERVICE_URL=http://web3-service:8000
+COINBASE_API_KEY=your_coinbase_api_key
+COINBASE_API_SECRET=your_coinbase_secret
+COINBASE_WEBHOOK_SECRET=your_webhook_secret
+
+# Cloudinary
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+# Firebase (for push notifications)
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_CLIENT_EMAIL=your_client_email
+FIREBASE_PRIVATE_KEY="your_private_key"
+
+# SMTP
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email
+SMTP_PASS=your_password
+
+# Platform Settings
+PLATFORM_FEE_PERCENT=10
+ESCROW_RELEASE_DELAY_HOURS=48
+CHECK_IN_RADIUS_KM=2
+PAYMENT_WINDOW_MINUTES=10
+CHAT_EXPIRY_HOURS=24
+```
+
+---
+
+## 🎓 REMEMBER THE KEY PRINCIPLES
+
+1. **Escrow is MANDATORY** - Every paid event uses escrow logic
+2. **Check-in Gates Everything** - Reviews, rewards, escrow release all require check-in
+3. **ML Integration is Critical** - Track all interactions for ML training
+4. **UX Guarantees are Non-Negotiable** - No shortcuts on user experience rules
+5. **Cross-Team Compatibility** - Your APIs must work seamlessly with 4 other teams
+
+Now continue from Day 4 onwards with this enhanced context!

@@ -2,12 +2,14 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Body,
   Param,
   UseGuards,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -35,12 +37,23 @@ export class UsersController {
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'User profile returned' })
   async getProfile(@CurrentUser() user: User) {
-    return this.sanitizeUser(user);
+    const userWithHobbies = await this.usersService.getUserWithHobbies(user.id);
+    const profileCompleteness = this.usersService.calculateProfileCompleteness(user);
+    return {
+      ...this.sanitizeUser(user),
+      hobbies: userWithHobbies?.hobbies.map(uh => ({
+        id: uh.hobby.id,
+        name: uh.hobby.name,
+        skillLevel: uh.skillLevel,
+        isPrimary: uh.isPrimary,
+      })) || [],
+      profileCompleteness,
+    };
   }
 
   @Put('profile')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiOperation({ summary: 'Update current user profile (full update)' })
   @ApiResponse({ status: 200, description: 'Profile updated successfully' })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   async updateProfile(
@@ -57,13 +70,71 @@ export class UsersController {
     return this.sanitizeUser(updatedUser);
   }
 
+  @Patch(':id/profile')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update user profile by ID (partial update)' })
+  @ApiParam({ name: 'id', description: 'User ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'Profile updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 403, description: 'Not allowed to update this profile' })
+  async updateProfileById(
+    @CurrentUser() currentUser: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateProfileDto: UpdateProfileDto,
+  ) {
+    // Users can only update their own profile (unless admin)
+    if (currentUser.id !== id && currentUser.role !== 'ADMIN') {
+      throw new ForbiddenException('You can only update your own profile');
+    }
+
+    // Convert dateOfBirth string to Date if provided
+    const updateData: Record<string, unknown> = { ...updateProfileDto };
+    if (updateProfileDto.dateOfBirth) {
+      updateData.dateOfBirth = new Date(updateProfileDto.dateOfBirth);
+    }
+    
+    const updatedUser = await this.usersService.updateProfile(id, updateData);
+    return this.sanitizeUser(updatedUser);
+  }
+
   @Get('referral-code')
   @ApiOperation({ summary: 'Get current user referral code' })
   @ApiResponse({ status: 200, description: 'Referral code returned' })
   async getReferralCode(@CurrentUser() user: User) {
+    // Generate code if not exists
+    let referralCode = user.referralCode;
+    if (!referralCode) {
+      referralCode = await this.usersService.generateReferralCode(user.id);
+    }
+
     return {
-      referralCode: user.referralCode,
-      referralLink: `https://kumele.com/signup?ref=${user.referralCode}`,
+      referralCode,
+      referralLink: `https://kumele.com/signup?ref=${referralCode}`,
+    };
+  }
+
+  @Get(':id/referral-code')
+  @ApiOperation({ summary: 'Get user referral code by ID' })
+  @ApiParam({ name: 'id', description: 'User ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'Referral code returned' })
+  async getReferralCodeById(
+    @CurrentUser() currentUser: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    // Users can only get their own referral code
+    if (currentUser.id !== id && currentUser.role !== 'ADMIN') {
+      throw new ForbiddenException('You can only access your own referral code');
+    }
+
+    const user = await this.usersService.getById(id);
+    let referralCode = user.referralCode;
+    if (!referralCode) {
+      referralCode = await this.usersService.generateReferralCode(id);
+    }
+
+    return {
+      referralCode,
+      referralLink: `https://kumele.com/signup?ref=${referralCode}`,
     };
   }
 
@@ -102,6 +173,58 @@ export class UsersController {
   async getUserById(@Param('id', ParseUUIDPipe) id: string) {
     const user = await this.usersService.getById(id);
     return this.sanitizeUserPublic(user);
+  }
+
+  @Get(':id/qr')
+  @ApiOperation({ summary: 'Generate QR code for user identity (for event check-in)' })
+  @ApiParam({ name: 'id', description: 'User ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'QR code data URL returned' })
+  @ApiResponse({ status: 403, description: 'Not allowed to generate QR for this user' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async generateQRCode(
+    @CurrentUser() currentUser: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    // Users can only generate QR for themselves
+    if (currentUser.id !== id && currentUser.role !== 'ADMIN') {
+      throw new ForbiddenException('You can only generate QR code for yourself');
+    }
+
+    const qrDataUrl = await this.usersService.generateQRCode(id);
+
+    return {
+      qrCodeUrl: qrDataUrl,
+      expiresAt: null, // QR codes don't expire for user identity
+      usage: 'Present this QR code to the event host for check-in',
+    };
+  }
+
+  @Get(':id/rewards')
+  @ApiOperation({ summary: 'Get user reward/badge status' })
+  @ApiParam({ name: 'id', description: 'User ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'Reward status returned' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getRewardStatus(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.getRewardStatus(id);
+  }
+
+  @Get(':id/profile-completeness')
+  @ApiOperation({ summary: 'Get user profile completeness' })
+  @ApiParam({ name: 'id', description: 'User ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'Profile completeness returned' })
+  @ApiResponse({ status: 403, description: 'Not allowed to view this profile' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getProfileCompleteness(
+    @CurrentUser() currentUser: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    // Users can only check their own profile completeness
+    if (currentUser.id !== id && currentUser.role !== 'ADMIN') {
+      throw new ForbiddenException('You can only check your own profile completeness');
+    }
+
+    const user = await this.usersService.getById(id);
+    return this.usersService.calculateProfileCompleteness(user);
   }
 
   /**

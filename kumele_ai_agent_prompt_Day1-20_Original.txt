@@ -1,0 +1,1850 @@
+
+# KUMELE BACKEND PROJECT - AI AGENT CONTEXT & IMPLEMENTATION GUIDE
+
+## PROJECT OVERVIEW
+You are assisting with the backend development of **Kumele**, a social meetup/hobby matching application. This is a **Phase 1 Backend Development** project with a 3-4 week timeline and $400 budget (split into 2 phases). The goal is to build 61-70 secure, production-ready REST APIs using modern Node.js/NestJS architecture.
+
+**Project Website**: kumele.com  
+**Your Role**: Backend Developer (collaborating with iOS/Swift, Flutter/Android, and Next.js/Web frontend teams)  
+**Client**: George (Project Owner)
+
+---
+
+## CORE BUSINESS MODEL
+Kumele is a "Tinder for events" — users match with events based on:
+- Location radius (default 10km, customizable)
+- Hobby preferences (multi-hobby taxonomy)
+- Time availability
+- Age/gender/language preferences
+
+**Key Differentiators**:
+1. **10-minute payment window**: Users reserve event spots but must pay within 10 minutes or slot reopens
+2. **Check-in gating**: Only checked-in users can review, claim refunds, or earn rewards
+3. **Temporary event chat**: Auto-created on first confirmed join, auto-closes 24h after event ends
+4. **Escrow-style payments**: Funds held until event completion + check-in verification
+5. **Reward tiers**: Bronze/Silver/Gold badges based on 30-day rolling participation
+6. **Multi-payment support**: Stripe (primary), PayPal (backup), Coinbase Commerce (Web3)
+
+---
+
+## TECH STACK (Locked Requirements)
+
+### Backend Core
+- **Runtime**: Node.js 20+
+- **Language**: TypeScript
+- **Framework**: NestJS (modular, scalable architecture)
+- **ORM**: Prisma (with migrations)
+- **Database**: PostgreSQL 15
+- **Cache/Queue**: Redis 7 (BullMQ for jobs, pub/sub for chat)
+
+### Authentication
+- **Primary**: JWT (access + refresh tokens with rotation)
+- **OAuth**: Google OAuth 2.0
+- **Passkeys**: WebAuthn for passwordless auth
+- **2FA**: TOTP (optional, for sensitive actions)
+- **Session Storage**: Database-backed (refresh token hashing with argon2)
+
+### Payments
+- **Stripe**: Primary (cards + escrow-style hold/release)
+- **PayPal**: Backup payment method
+- **Coinbase Commerce**: Web3 payments (SOL) with USD/EUR pricing display
+- **Escrow Logic**: Hold funds → release after event completion + check-in verification
+
+### Real-time & Communication
+- **WebSocket**: Socket.IO (temporary event chat)
+- **Push Notifications**: Firebase Admin SDK
+- **Email**: SMTP transactional emails
+- **Chat Persistence**: Redis pub/sub + PostgreSQL storage
+
+### File Handling
+- **Upload**: Cloudinary or Multer
+- **QR Codes**: qrcode npm package (for user identity + event check-in)
+
+### DevOps & Deployment
+- **Containerization**: Docker + docker-compose (dev), AWS ECS/Fargate (production)
+- **Reverse Proxy**: Nginx
+- **CI/CD**: GitHub Actions
+- **Process Manager**: PM2
+- **Monitoring**: Prometheus + Grafana
+- **Documentation**: Swagger/OpenAPI (required for all APIs)
+
+### Maps & Location
+- **Provider**: OpenStreetMap (Nominatim geocoding + tile server)
+- **Distance Calculation**: Haversine formula (2km check-in radius)
+
+---
+
+## API REQUIREMENTS SUMMARY (61 APIs, Max 70)
+
+### 1. User Authentication & Profile (11 APIs)
+1. User Signup (email + Google OAuth + referral code)
+2. User Login (email/password + Google OAuth)
+3. Passkey Authentication (WebAuthn registration)
+4. 2FA Verification (TOTP/OTP)
+5. User Logout
+6. Refresh Token
+7. User Profile Fetch
+8. User Profile Update
+9. User QR Code Generation (check-in + identity)
+10. User Referral Code Generate & Validate
+11. User Reward/Badge Status (Bronze/Silver/Gold/NFT)
+
+### 2. Payments, Escrow & Purchases (9 APIs)
+1. In-App Purchase Initiation (Stripe subscriptions)
+2. Event Ticket Payment (Stripe Escrow)
+3. PayPal Payment Link (backup)
+4. Payment Confirmation Webhook
+5. User Purchase History
+6. Discount/Promo Code Validation
+7. Subscription Status
+8. Refund Eligibility Check
+9. Refund Request
+
+### 3. Events & Matching (9 APIs)
+1. Event Creation (host)
+2. Event Cancel (affects host rating)
+3. Event List (location, hobby, time filters)
+4. Event Details
+5. Event Match/Join (10-minute payment window)
+6. Event Leave/Timeout (auto-replace)
+7. Event Check-In (QR scan by host OR self GPS ≤2km)
+8. Event Attendance History
+9. Event Guest List (host view)
+
+### 4. Hobbies & Preferences (3 APIs)
+1. Hobby Categories
+2. User Hobby Preferences (fetch/update)
+3. Location Radius Preference
+
+### 5. Temporary Event Chat (4 APIs)
+1. Event Chat Room Create (auto on match)
+2. Event Chat Message (Socket-secured)
+3. Event Chat Metadata (address, time, rules)
+4. Event Chat Auto-Close (24h post-event)
+
+### 6. Blogs & Community Content (6 APIs)
+1. Blog Feed (latest/popular/recommended)
+2. Blog Details
+3. Create Blog Post
+4. Like Blog
+5. Comment on Blog
+6. Fetch Blog Comments
+
+### 7. Ads & Promotion System (5 APIs)
+1. Create Ad Campaign
+2. Ad Targeting Options (hobby, location, age, gender, language)
+3. Fetch Ads (feed-based delivery)
+4. Ad Engagement Tracking (views, clicks, conversions)
+5. Ad Analytics (reuse, performance stats)
+
+### 8. Notifications & Messaging (4 APIs)
+1. Notification Feed
+2. Mark Notification as Read
+3. Push Token Registration (Firebase)
+4. Email Notification Trigger (SMTP)
+
+### 9. Localization & App Config (3 APIs)
+1. App Localization Strings
+2. Supported Languages
+3. App Configuration (maintenance, versioning)
+
+### 10. Utility & Support (4 APIs)
+1. Share Token Generator (event/blog share)
+2. Upload Media (profile, blog, ad assets)
+3. Support/Feedback Submission
+4. Admin Moderation Flag (blogs, ads, users)
+
+### 11. Web3 Hooks (3 APIs)
+1. Wallet Connect Metadata
+2. NFT Ownership Sync (badges, music, perks)
+3. Transaction Reference Store (hash only)
+
+---
+
+## DAY-BY-DAY IMPLEMENTATION PLAN (20 DAYS)
+
+### **WEEK 1 — FOUNDATION & AUTH (Days 1-5)**
+
+#### **Day 1 — Project & Infrastructure Setup**
+**Goal**: Working NestJS API with Swagger, Docker dev stack (Postgres + Redis), health endpoint.
+
+**Tasks**:
+1. Create NestJS project with CLI
+2. Install dependencies:
+   - Core: `@nestjs/config`, `@nestjs/swagger`, `swagger-ui-express`
+   - Database: `prisma`, `@prisma/client`
+   - Validation: `class-validator`, `class-transformer`
+   - Health: `@nestjs/terminus`, `@nestjs/axios`
+   - Linting: `eslint`, `prettier`, `eslint-config-prettier`
+
+3. Setup repo structure:
+```
+kumele-api/
+├── src/
+│   ├── main.ts
+│   ├── app.module.ts
+│   ├── common/
+│   │   ├── guards/
+│   │   ├── decorators/
+│   │   ├── filters/
+│   │   ├── interceptors/
+│   │   ├── pipes/
+│   │   └── utils/
+│   ├── config/
+│   ├── modules/
+│   │   ├── health/
+│   │   ├── auth/
+│   │   ├── users/
+│   │   ├── events/
+│   │   ├── payments/
+│   │   ├── chat/
+│   │   ├── blogs/
+│   │   ├── ads/
+│   │   ├── notifications/
+│   │   └── admin/
+│   └── prisma/
+├── prisma/
+│   ├── schema.prisma
+│   └── migrations/
+├── test/
+├── docker/
+├── docker-compose.yml
+├── .env.example
+├── .eslintrc.cjs
+├── .prettierrc
+└── nest-cli.json
+```
+
+4. Create `docker-compose.yml` for Postgres + Redis
+5. Setup `.env.example` with all required environment variables
+6. Configure Swagger in `main.ts` with Bearer auth
+7. Create health endpoint using `@nestjs/terminus`
+8. Setup global ValidationPipe with `whitelist: true`
+
+**Deliverables**:
+- `/docs` endpoint serving Swagger UI
+- `/health` endpoint checking Postgres connection
+- Docker containers running locally
+- ESLint + Prettier configured
+
+---
+
+#### **Day 2 — Authentication (Core)**
+**Goal**: JWT-based auth system with Google OAuth scaffolding.
+
+**Tasks**:
+1. Install auth dependencies:
+   - `@nestjs/jwt`, `@nestjs/passport`
+   - `passport`, `passport-jwt`, `passport-google-oauth20`
+   - `cookie-parser`, `argon2`
+
+2. Create AuthModule with:
+   - `AuthController` (signup, login, logout, refresh)
+   - `AuthService` (user creation, password hashing, token generation)
+   - `JwtStrategy` for access token validation
+   - `JwtRefreshStrategy` for refresh token validation
+   - `GoogleStrategy` (scaffold for OAuth flow)
+
+3. Implement DTOs:
+   - `SignupDto`: email, name?, referralCode?, password?
+   - `LoginDto`: email, password?
+   - Validate with class-validator decorators
+
+4. Create `@Public()` decorator for public endpoints
+
+5. Setup JwtAuthGuard as global guard with Public decorator exception
+
+6. Implement refresh token rotation:
+   - Store hashed refresh tokens in `Session` table
+   - Generate new access + refresh token pair on refresh
+   - Invalidate old refresh token
+
+**Key Business Rules**:
+- Access token TTL: 15 minutes (900 seconds)
+- Refresh token TTL: 30 days (2592000 seconds)
+- Refresh tokens must be stored hashed (use argon2)
+- Support referral code validation on signup
+
+**Deliverables**:
+- `POST /auth/signup`
+- `POST /auth/login`
+- `POST /auth/logout`
+- `POST /auth/refresh`
+- JWT guard protecting all routes by default
+
+---
+
+#### **Day 3 — Security & Identity**
+**Goal**: Passkey (WebAuthn) support for passwordless authentication.
+
+**Tasks**:
+1. Install `@simplewebauthn/server`
+
+2. Add Prisma model:
+```prisma
+model PasskeyCredential {
+  id          String   @id @default(cuid())
+  userId      String
+  credentialId Bytes   @unique
+  publicKey   Bytes
+  counter     Int
+  transports  String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+  @@index([userId])
+}
+```
+
+3. Create endpoints:
+   - `POST /auth/passkey/register/options` - Generate registration challenge
+   - `POST /auth/passkey/register/verify` - Verify and store credential
+   - `POST /auth/passkey/login/options` - Generate authentication challenge
+   - `POST /auth/passkey/login/verify` - Verify credential and issue JWT
+
+4. Implement challenge storage in Redis (TTL: 5 minutes)
+
+5. Handle multiple passkeys per user (device management)
+
+**Security Considerations**:
+- Store credentialId and publicKey as Bytes
+- Track counter to prevent replay attacks
+- Set proper RP ID (Relying Party - your domain)
+- Support cross-platform authenticators
+
+**Deliverables**:
+- Passkey registration flow
+- Passkey login flow
+- Compatible with iOS Face ID, Android biometrics, hardware keys
+
+---
+
+#### **Day 4 — User Profile & Identity**
+**Goal**: Profile management + QR code generation for check-in.
+
+**Tasks**:
+1. Create UsersModule with:
+   - `UsersController`
+   - `UsersService`
+   - DTOs: `UpdateProfileDto`, `UpdateHobbyPreferencesDto`
+
+2. Install `qrcode` package
+
+3. Implement endpoints:
+   - `GET /users/:id` - Fetch user profile
+   - `PATCH /users/:id/profile` - Update profile (name, avatar, city, lat/lon, radius)
+   - `GET /users/:id/qr` - Generate QR code for user identity
+   - `GET /users/:id/hobbies` - Get user hobby preferences
+   - `PATCH /users/:id/hobbies` - Update hobby preferences (with weights 1-5)
+   - `GET /users/:id/rewards` - Get reward tier status
+
+4. QR code payload format:
+```json
+{
+  "userId": "cuid_here",
+  "type": "user_identity",
+  "timestamp": 1234567890
+}
+```
+
+5. Add profile completeness validation:
+   - Name, location (city + lat/lon), at least 3 hobbies
+   - Block event matching if profile < 80% complete
+
+**Privacy Rules**:
+- Users can only update their own profile
+- Admin can view all profiles
+- Public profile: name, avatar, city (not exact coordinates)
+
+**Deliverables**:
+- Complete profile CRUD
+- QR code generation (base64 data URL)
+- Hobby preferences management
+
+---
+
+#### **Day 5 — Rewards (Read-only)**
+**Goal**: Expose reward/badge status API (computation happens later).
+
+**Tasks**:
+1. Create reward tier constants:
+   - NONE: Default
+   - BRONZE: 3+ events attended in last 30 days
+   - SILVER: 8+ events attended in last 30 days
+   - GOLD: 15+ events attended in last 30 days
+   - NFT: Purchased via Web3 (special badge)
+
+2. Implement `GET /users/:id/rewards` returning:
+```json
+{
+  "userId": "...",
+  "currentTier": "SILVER",
+  "goldCount": 45,
+  "eventsLast30Days": 9,
+  "nextTierProgress": {
+    "nextTier": "GOLD",
+    "eventsRequired": 15,
+    "remaining": 6
+  },
+  "badges": ["EARLY_ADOPTER", "EVENT_HOST_10X"]
+}
+```
+
+3. Add placeholder badge logic (will be populated by nightly cron later)
+
+**Note**: Actual reward computation will be implemented on Day 12 with cron jobs.
+
+**Deliverables**:
+- Read-only reward status API
+- Badge enum in Prisma schema
+
+---
+
+### **WEEK 2 — EVENTS, MATCHING & CONTENT (Days 6-10)**
+
+#### **Day 6 — Events (Core)**
+**Goal**: Core "Tinder for events" experience - create/list/details.
+
+**Tasks**:
+1. Create EventsModule with full CRUD
+
+2. Implement endpoints:
+   - `POST /events` - Create event (host only)
+   - `GET /events` - List events with filters:
+     * Location (lat/lon + radiusKm)
+     * Hobbies (match ANY or ALL)
+     * Date range (startDate, endDate)
+     * Min/max age
+     * Pagination (page, limit)
+   - `GET /events/:id` - Event details
+   - `PATCH /events/:id` - Update event (ONLY if status=DRAFT)
+   - `POST /events/:id/activate` - Publish event (DRAFT → ACTIVE)
+   - `POST /events/:id/cancel` - Cancel event (affects host rating)
+
+3. Event status workflow:
+```
+DRAFT → ACTIVE → COMPLETED
+         ↓
+     CANCELED
+```
+
+4. **Critical Business Rule - Edit Lock**:
+   - Once event status = ACTIVE, host CANNOT edit (title, date, location, capacity)
+   - Host can only CANCEL active events
+   - Canceled events affect host reputation score
+
+5. Add EventHobby many-to-many relationship
+
+6. Calculate distance using Haversine formula:
+```typescript
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+```
+
+**Validation Rules**:
+- Capacity: 2-50 people
+- startsAt must be in future (when creating)
+- endsAt must be after startsAt
+- Location (lat/lon) required for matching
+
+**Deliverables**:
+- Complete event lifecycle
+- Location-based filtering
+- Edit lock enforcement
+
+---
+
+#### **Day 7 — Event Participation**
+**Goal**: Matching, joining, and guest list management.
+
+**Tasks**:
+1. Implement matching algorithm endpoint:
+   - `GET /match/events` - Returns personalized event recommendations based on:
+     * User location + radius preference
+     * User hobby preferences (weighted match score)
+     * User age in event's age range
+     * Available capacity
+     * Event not already joined
+
+2. Create join/leave endpoints:
+   - `POST /events/:id/join` - Reserve spot (10-minute payment window)
+   - `POST /events/:id/leave` - Leave before payment
+   - `GET /events/:id/guests` - Guest list (host view)
+
+3. **10-Minute Payment Window Logic**:
+```typescript
+// On join:
+const reservedUntil = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+await prisma.eventJoin.create({
+  data: {
+    eventId,
+    userId,
+    status: 'RESERVED',
+    reservedUntil
+  }
+});
+
+// Background job (every minute):
+// Expire reservations and free up capacity
+await prisma.eventJoin.updateMany({
+  where: {
+    status: 'RESERVED',
+    reservedUntil: { lt: new Date() }
+  },
+  data: { status: 'EXPIRED' }
+});
+```
+
+4. Join status workflow:
+```
+RESERVED → PENDING_PAYMENT → JOINED → (event ends) → eligible for rewards
+    ↓
+  EXPIRED (timeout)
+    ↓
+  CANCELED (user leaves)
+```
+
+5. Capacity management:
+   - Check available slots before join
+   - Count only RESERVED + PENDING_PAYMENT + JOINED
+   - Expired/Canceled slots free up capacity
+
+**Deliverables**:
+- Matching algorithm with scoring
+- 10-minute reservation system
+- Auto-expiration background job (BullMQ)
+
+---
+
+#### **Day 8 — Check-In System (Critical)**
+**Goal**: Dual check-in methods: host QR scan OR self GPS validation.
+
+**Tasks**:
+1. Implement check-in endpoints:
+   - `POST /events/:id/checkin/host-qr` - Host scans guest QR code
+   - `POST /events/:id/checkin/self-gps` - Guest self-checks in via GPS
+   - `GET /events/:id/checkin/:userId` - Check-in status
+
+2. **Host QR Scan Flow**:
+   - Host scans guest's user QR code (from GET /users/:id/qr)
+   - Validate guest is in event's guest list (status=JOINED)
+   - Create Checkin record with method=HOST_QR
+
+3. **Self GPS Check-in Flow**:
+   - Guest provides current location (lat, lon)
+   - Calculate distance to event location using Haversine
+   - **Rule**: Distance must be ≤ 2km
+   - Create Checkin record with method=SELF_GPS, store distance
+
+4. Check-in window:
+   - Available from 1 hour before event.startsAt
+   - Until event.endsAt
+
+5. **Gating Logic** (enforce in other modules):
+```typescript
+async requireCheckin(eventId: string, userId: string) {
+  const checkin = await prisma.checkin.findUnique({
+    where: { eventId_userId: { eventId, userId } }
+  });
+  if (!checkin) {
+    throw new ForbiddenException('Check-in required for this action');
+  }
+  return checkin;
+}
+```
+
+6. Check-in gates:
+   - Posting event reviews
+   - Claiming refunds
+   - Earning reward points
+   - Escrow payment release
+
+**Deliverables**:
+- Dual check-in system (QR + GPS)
+- 2km radius validation
+- Check-in gating utility
+
+---
+
+#### **Day 9 — Blogs & Community**
+**Goal**: User-generated content with moderation hooks.
+
+**Tasks**:
+1. Create BlogsModule with endpoints:
+   - `GET /blogs` - Feed with filters (latest, popular, hobby-based)
+   - `GET /blogs/:id` - Blog details with comments
+   - `POST /blogs` - Create blog post
+   - `PATCH /blogs/:id` - Update own blog
+   - `DELETE /blogs/:id` - Delete own blog
+   - `POST /blogs/:id/like` - Like/unlike toggle
+   - `POST /blogs/:id/comments` - Add comment
+   - `GET /blogs/:id/comments` - List comments
+
+2. Blog-Event linking:
+   - Allow blog posts to reference events (BlogEventRef table)
+   - Show linked events in blog details
+
+3. **Content Moderation Hook**:
+```typescript
+// After blog creation:
+await prisma.moderationJob.create({
+  data: {
+    contentId: blog.id,
+    type: 'text',
+    subtype: 'blog',
+    status: 'pending'
+  }
+});
+
+// Block content if decision = 'REJECT'
+```
+
+4. Pagination + sorting:
+   - Latest (createdAt DESC)
+   - Popular (like count DESC, last 7 days)
+   - Recommended (based on user hobbies)
+
+5. Like toggle logic (idempotent):
+```typescript
+// If like exists, delete (unlike)
+// If like doesn't exist, create (like)
+```
+
+**Deliverables**:
+- Complete blog CRUD
+- Like/comment system
+- Moderation job creation
+
+---
+
+#### **Day 10 — Matching Output Integration**
+**Goal**: Refine matching algorithm + expose ranked results.
+
+**Tasks**:
+1. Enhance matching score calculation:
+```typescript
+function calculateMatchScore(user, event) {
+  let score = 0;
+
+  // Distance score (closer = better)
+  const distance = haversineDistance(user.lat, user.lon, event.lat, event.lon);
+  if (distance <= user.radiusKm) {
+    score += (1 - distance / user.radiusKm) * 30; // Max 30 points
+  }
+
+  // Hobby match score (weighted)
+  const userHobbyKeys = user.hobbies.map(h => h.hobbyId);
+  const eventHobbyKeys = event.hobbies.map(h => h.hobbyId);
+  const commonHobbies = userHobbyKeys.filter(h => eventHobbyKeys.includes(h));
+  score += commonHobbies.length * 20; // 20 points per matching hobby
+
+  // Time preference score (prefer events starting soon)
+  const hoursUntilStart = (event.startsAt - Date.now()) / (1000 * 60 * 60);
+  if (hoursUntilStart <= 24) score += 15;
+  else if (hoursUntilStart <= 72) score += 10;
+  else score += 5;
+
+  // Capacity score (prefer not-too-full)
+  const fillRate = event.joins.length / event.capacity;
+  if (fillRate < 0.8) score += 10;
+
+  return score;
+}
+```
+
+2. Return ranked events with match reasons:
+```json
+{
+  "events": [
+    {
+      "event": {...},
+      "matchScore": 85,
+      "matchReasons": [
+        "3 common hobbies: Football, Yoga, Photography",
+        "Only 2.3km away",
+        "Starts in 6 hours"
+      ]
+    }
+  ]
+}
+```
+
+3. Cache matching results in Redis (TTL: 5 minutes)
+
+**Deliverables**:
+- Sophisticated matching algorithm
+- Ranked results with explanations
+
+---
+
+### **WEEK 3 — PAYMENTS, CHAT & NOTIFICATIONS (Days 11-15)**
+
+#### **Day 11 — Payments (Stripe + PayPal)**
+**Goal**: Escrow-style payment hold/release system.
+
+**Tasks**:
+1. Install Stripe SDK: `npm i stripe`
+
+2. Create PaymentsModule with:
+   - `POST /payments/stripe/intent` - Create payment intent for event join
+   - `POST /payments/paypal/link` - Generate PayPal payment link (backup)
+   - `POST /payments/webhook/stripe` - Handle Stripe webhooks
+   - `POST /payments/webhook/paypal` - Handle PayPal webhooks
+   - `GET /payments/history` - User's payment history
+
+3. **Stripe Escrow Flow**:
+```typescript
+// On join with payment:
+const paymentIntent = await stripe.paymentIntents.create({
+  amount: event.priceCents,
+  currency: event.currency.toLowerCase(),
+  payment_method: paymentMethodId,
+  capture_method: 'manual', // KEY: Don't capture immediately
+  metadata: {
+    eventId,
+    userId,
+    joinId
+  }
+});
+
+// Update EventJoin to PENDING_PAYMENT
+await prisma.eventJoin.update({
+  where: { id: joinId },
+  data: { status: 'PENDING_PAYMENT' }
+});
+
+// On successful payment confirmation (webhook):
+await prisma.eventJoin.update({
+  where: { id: joinId },
+  data: { status: 'JOINED' }
+});
+```
+
+4. **Payment Release Conditions** (check ALL):
+   - Event status = COMPLETED
+   - User has Checkin record
+   - No pending refund dispute
+   - 48 hours have passed since event end
+
+5. **Webhook Security**:
+   - Verify Stripe signature using webhook secret
+   - Use idempotency keys
+   - Handle duplicate webhooks gracefully
+
+6. Store PaymentIntent in database:
+```prisma
+model PaymentIntent {
+  id          String          @id @default(cuid())
+  joinId      String          @unique
+  provider    PaymentProvider // STRIPE | PAYPAL | COINBASE
+  amountCents Int
+  currency    String
+  status      PaymentStatus
+  providerRef String?         // Stripe PI ID
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  join        EventJoin       @relation(fields: [joinId], references: [id])
+}
+```
+
+**Deliverables**:
+- Stripe payment intent creation
+- Webhook handling with signature verification
+- Escrow hold/release logic
+- PayPal integration scaffold
+
+---
+
+#### **Day 12 — Discounts & Subscriptions**
+**Goal**: Promo codes, subscription management, refund eligibility.
+
+**Tasks**:
+1. Add PromoCode model:
+```prisma
+model PromoCode {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  discountType  String   // PERCENTAGE | FIXED_AMOUNT
+  discountValue Int      // 20 (for 20%) or 500 (for $5)
+  validFrom     DateTime
+  validUntil    DateTime
+  maxUses       Int?
+  currentUses   Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+```
+
+2. Implement endpoints:
+   - `POST /payments/promo/validate` - Validate promo code
+   - `POST /payments/promo/apply` - Apply discount to payment
+   - `GET /payments/subscriptions/:userId` - Get subscription status
+   - `POST /payments/subscriptions/create` - Create subscription (Stripe)
+   - `POST /payments/subscriptions/cancel` - Cancel subscription
+
+3. **Refund Eligibility Rules**:
+```typescript
+async checkRefundEligibility(joinId: string) {
+  const join = await prisma.eventJoin.findUnique({
+    where: { id: joinId },
+    include: { event: true, user: true, payment: true, checkin: true }
+  });
+
+  // Rule 1: Must have paid
+  if (join.status !== 'JOINED') {
+    return { eligible: false, reason: 'No payment made' };
+  }
+
+  // Rule 2: Must have checked in
+  if (!join.checkin) {
+    return { eligible: false, reason: 'Did not check in' };
+  }
+
+  // Rule 3: Event must be COMPLETED
+  if (join.event.status !== 'COMPLETED') {
+    return { eligible: false, reason: 'Event not completed' };
+  }
+
+  // Rule 4: Within dispute window (7 days after event)
+  const daysSinceEvent = (Date.now() - join.event.endsAt.getTime()) / (1000 * 60 * 60 * 24);
+  if (daysSinceEvent > 7) {
+    return { eligible: false, reason: 'Dispute window closed' };
+  }
+
+  return { eligible: true, reason: null };
+}
+```
+
+4. Implement refund request:
+   - `POST /payments/:joinId/refund-request`
+   - `POST /payments/:joinId/refund/approve` (admin only)
+   - `POST /payments/:joinId/refund/reject` (admin only)
+
+**Deliverables**:
+- Promo code validation
+- Subscription management
+- Refund eligibility checking
+- Refund request workflow
+
+---
+
+#### **Day 13 — Chat (Temporary & Scoped)**
+**Goal**: Socket.IO chat that auto-creates on first join, auto-closes 24h after event.
+
+**Tasks**:
+1. Install Socket.IO: `npm i @nestjs/websockets @nestjs/platform-socket.io socket.io`
+
+2. Create ChatModule with:
+   - `ChatGateway` (WebSocket handler)
+   - HTTP endpoints for chat history
+   - Auto-room management
+
+3. **Chat Room Lifecycle**:
+```typescript
+// Auto-create on first JOINED status:
+async onFirstJoin(eventId: string) {
+  const event = await prisma.event.findUnique({ where: { id: eventId }});
+  const closesAt = new Date(event.endsAt.getTime() + 24 * 60 * 60 * 1000);
+
+  await prisma.chatRoom.upsert({
+    where: { eventId },
+    update: {},
+    create: {
+      eventId,
+      opensAt: new Date(),
+      closesAt
+    }
+  });
+}
+
+// Auto-close job (cron every hour):
+await prisma.chatRoom.updateMany({
+  where: { closesAt: { lt: new Date() }},
+  data: { status: 'CLOSED' }
+});
+```
+
+4. **Socket Authentication**:
+```typescript
+@WebSocketGateway({ cors: true })
+export class ChatGateway {
+  @SubscribeMessage('join_room')
+  async handleJoinRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { eventId: string, token: string }
+  ) {
+    // Verify JWT token
+    const userId = await this.verifyToken(data.token);
+
+    // Verify user is in event guest list
+    const join = await this.prisma.eventJoin.findFirst({
+      where: { eventId: data.eventId, userId, status: 'JOINED' }
+    });
+
+    if (!join) throw new WsException('Not authorized for this chat');
+
+    // Join Socket.IO room
+    client.join(`event_${data.eventId}`);
+  }
+}
+```
+
+5. Implement endpoints:
+   - `GET /events/:id/chat` - Get chat history (paginated)
+   - `POST /events/:id/chat/messages` - Send message (HTTP fallback)
+   - WebSocket: `join_room`, `send_message`, `typing_indicator`
+
+6. **Message Structure**:
+```json
+{
+  "id": "msg_123",
+  "roomId": "room_456",
+  "senderId": "user_789",
+  "senderName": "John Doe",
+  "senderAvatar": "https://...",
+  "body": "See you there!",
+  "createdAt": "2026-01-16T10:30:00Z"
+}
+```
+
+7. Rate limiting: 10 messages per minute per user
+
+**Deliverables**:
+- Socket.IO gateway with JWT auth
+- Auto-create/close chat rooms
+- Message persistence in PostgreSQL
+- Chat history API
+
+---
+
+#### **Day 14 — Notifications**
+**Goal**: Push notifications (Firebase) + Email (SMTP).
+
+**Tasks**:
+1. Install Firebase Admin: `npm i firebase-admin`
+
+2. Create NotificationsModule with:
+   - `POST /devices/push-token` - Register device for push
+   - `GET /notifications` - Notification feed
+   - `POST /notifications/:id/read` - Mark as read
+   - `DELETE /devices/:id` - Unregister device
+
+3. Firebase Admin initialization:
+```typescript
+import * as admin from 'firebase-admin';
+
+admin.initializeApp({
+  credential: admin.credential.cert({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\n/g, '
+')
+  })
+});
+```
+
+4. **Push Notification Triggers**:
+   - Event match found
+   - Payment deadline (5 minutes remaining)
+   - Event reminder (1 hour before)
+   - Check-in reminder (event started)
+   - Chat message received (when offline)
+   - Review request (1 hour after event)
+   - Reward tier upgrade
+
+5. Multi-device support:
+```typescript
+async sendPushToUser(userId: string, notification: NotificationPayload) {
+  const devices = await prisma.device.findMany({
+    where: { userId, pushToken: { not: null }}
+  });
+
+  const tokens = devices.map(d => d.pushToken);
+
+  const message = {
+    notification: {
+      title: notification.title,
+      body: notification.body
+    },
+    data: notification.data,
+    tokens
+  };
+
+  await admin.messaging().sendMulticast(message);
+}
+```
+
+6. **Email Templates** (transactional):
+   - Welcome email (signup)
+   - Event confirmation (after payment)
+   - Event reminder (24h, 1h before)
+   - Payment receipt
+   - Refund confirmation
+   - Account verification
+
+7. Use SMTP with Nodemailer:
+```typescript
+import * as nodemailer from 'nodemailer';
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT),
+  secure: true,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+```
+
+**Deliverables**:
+- Firebase push notifications
+- Multi-device token management
+- Email sending service
+- Notification feed with read status
+
+---
+
+#### **Day 15 — Ads (Core)**
+**Goal**: Ad campaign creation, targeting, delivery, tracking.
+
+**Tasks**:
+1. Create AdsModule with AdAccount + AdCampaign management
+
+2. Implement endpoints:
+   - `POST /ads/account` - Create ad account (same login can have ad account)
+   - `POST /ads/campaigns` - Create ad campaign
+   - `GET /ads/campaigns` - List user's campaigns
+   - `PATCH /ads/:id` - Update campaign (only if DRAFT)
+   - `POST /ads/:id/activate` - Publish campaign (DRAFT → ACTIVE)
+   - `POST /ads/:id/pause` - Pause campaign
+   - `GET /ads/feed` - Get ads for user (targeted delivery)
+   - `POST /ads/:id/track` - Track impression/click/conversion
+   - `GET /ads/:id/metrics` - Get campaign analytics
+
+3. **Targeting Schema**:
+```json
+{
+  "hobbyKeys": ["football", "yoga"],
+  "gender": ["male", "female", "other"],
+  "languages": ["en", "de", "fr"],
+  "location": {
+    "city": "Berlin",
+    "country": "Germany",
+    "radiusKm": 20
+  },
+  "age": {
+    "min": 18,
+    "max": 35
+  }
+}
+```
+
+4. **Ad Delivery Algorithm**:
+```typescript
+async getTargetedAds(user: User, limit: number = 3) {
+  // Fetch active campaigns
+  const campaigns = await prisma.adCampaign.findMany({
+    where: { status: 'ACTIVE' }
+  });
+
+  // Score each campaign against user profile
+  const scored = campaigns.map(campaign => ({
+    campaign,
+    score: this.calculateAdRelevance(campaign, user)
+  }));
+
+  // Sort by score, shuffle within score tiers, limit
+  return scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(s => s.campaign);
+}
+```
+
+5. **Metrics Tracking**:
+```prisma
+model AdMetric {
+  id          String   @id @default(cuid())
+  campaignId  String
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  conversions Int      @default(0)
+  ds          DateTime @default(now()) // Daily bucket
+  campaign    AdCampaign @relation(fields: [campaignId], references: [id])
+  @@index([campaignId, ds])
+}
+```
+
+6. Campaign reuse:
+   - Campaigns can be duplicated (copy targeting + creative)
+   - Historical metrics preserved per campaign ID
+
+**Deliverables**:
+- Ad account and campaign CRUD
+- Targeting-based ad delivery
+- Impression/click/conversion tracking
+- Analytics dashboard endpoint
+
+---
+
+### **WEEK 4 — ADMIN, UTILITIES & HARDENING (Days 16-20)**
+
+#### **Day 16 — Admin APIs**
+**Goal**: Admin-only endpoints for moderation, user management, payouts.
+
+**Tasks**:
+1. Create RolesGuard:
+```typescript
+@Injectable()
+export class RolesGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const requiredRoles = this.reflector.get<string[]>('roles', context.getHandler());
+    if (!requiredRoles) return true;
+
+    const request = context.switchToHttp().getRequest();
+    const user = request.user;
+
+    return requiredRoles.includes(user.role);
+  }
+}
+```
+
+2. Create @Roles() decorator:
+```typescript
+export const Roles = (...roles: string[]) => SetMetadata('roles', roles);
+```
+
+3. Implement admin endpoints:
+   - `GET /admin/users` - List all users (paginated, filterable)
+   - `PATCH /admin/users/:id/role` - Change user role
+   - `POST /admin/users/:id/ban` - Ban user
+   - `GET /admin/events` - List all events (with status filters)
+   - `POST /admin/events/:id/cancel` - Force cancel event
+   - `GET /admin/moderation/jobs` - List pending moderation jobs
+   - `POST /admin/moderation/:id/approve` - Approve content
+   - `POST /admin/moderation/:id/reject` - Reject content
+   - `GET /admin/payments` - Payment dashboard
+   - `POST /admin/payments/:id/refund` - Force refund
+
+4. **Moderation Queue**:
+```typescript
+@Roles('ADMIN')
+@Get('admin/moderation/jobs')
+async getModerationJobs(@Query() query: ModerationQueryDto) {
+  return this.prisma.moderationJob.findMany({
+    where: {
+      status: query.status || 'pending',
+      type: query.type
+    },
+    include: {
+      // Include content details based on type
+    },
+    orderBy: { createdAt: 'asc' }
+  });
+}
+```
+
+5. Admin action logging:
+   - Log all admin actions to AdminAuditLog table
+   - Include: adminId, action, targetId, timestamp, metadata
+
+**Deliverables**:
+- Role-based access control
+- Admin user management
+- Moderation queue
+- Admin audit logging
+
+---
+
+#### **Day 17 — Utilities & App Config**
+**Goal**: Support endpoints, media upload, localization, app config.
+
+**Tasks**:
+1. Install Cloudinary (or use Multer for local):
+   - `npm i cloudinary multer`
+   - `npm i --save-dev @types/multer`
+
+2. Create UtilsModule with:
+   - `POST /upload/image` - Upload image (profile, blog, ad)
+   - `POST /upload/video` - Upload video (ad creative)
+   - `GET /localization/:lang` - Get localized strings
+   - `GET /config/app` - App configuration (maintenance mode, min version)
+   - `POST /support/feedback` - Submit feedback
+   - `POST /support/report` - Report content
+
+3. **Image Upload**:
+```typescript
+@Post('upload/image')
+@UseInterceptors(FileInterceptor('file'))
+async uploadImage(@UploadedFile() file: Express.Multer.File) {
+  // Validate: image type, max 5MB
+  if (!file.mimetype.startsWith('image/')) {
+    throw new BadRequestException('Only images allowed');
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    throw new BadRequestException('Max 5MB');
+  }
+
+  // Upload to Cloudinary
+  const result = await cloudinary.uploader.upload(file.path, {
+    folder: 'kumele',
+    transformation: [
+      { width: 1000, height: 1000, crop: 'limit' }
+    ]
+  });
+
+  return {
+    url: result.secure_url,
+    publicId: result.public_id
+  };
+}
+```
+
+4. **Localization JSON**:
+```json
+{
+  "en": {
+    "welcome": "Welcome to Kumele",
+    "event_created": "Event created successfully",
+    "payment_successful": "Payment successful"
+  },
+  "de": {
+    "welcome": "Willkommen bei Kumele",
+    "event_created": "Veranstaltung erfolgreich erstellt",
+    "payment_successful": "Zahlung erfolgreich"
+  }
+}
+```
+
+5. **App Config** (cached in Redis):
+```json
+{
+  "maintenanceMode": false,
+  "minVersionIOS": "1.2.0",
+  "minVersionAndroid": "1.2.0",
+  "minVersionWeb": "1.2.0",
+  "features": {
+    "web3Enabled": true,
+    "chatEnabled": true,
+    "adsEnabled": true
+  },
+  "supportedLanguages": ["en", "de", "fr", "es", "zh", "ar"]
+}
+```
+
+**Deliverables**:
+- Image/video upload service
+- Localization system
+- App configuration API
+- Support/feedback system
+
+---
+
+#### **Day 18 — Support & Feedback**
+**Goal**: User support system, content reporting, feedback collection.
+
+**Tasks**:
+1. Add models:
+```prisma
+model SupportTicket {
+  id          String   @id @default(cuid())
+  userId      String?
+  email       String
+  subject     String
+  message     String
+  category    String   // TECHNICAL | PAYMENT | ACCOUNT | OTHER
+  status      String   @default('OPEN') // OPEN | IN_PROGRESS | RESOLVED | CLOSED
+  priority    String   @default('NORMAL') // LOW | NORMAL | HIGH | URGENT
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User?    @relation(fields: [userId], references: [id])
+  responses   SupportResponse[]
+}
+
+model ContentReport {
+  id          String   @id @default(cuid())
+  reporterId  String
+  contentType String   // BLOG | EVENT | USER | COMMENT
+  contentId   String
+  reason      String   // SPAM | HARASSMENT | INAPPROPRIATE | SCAM
+  details     String?
+  status      String   @default('PENDING')
+  createdAt   DateTime @default(now())
+  reporter    User     @relation(fields: [reporterId], references: [id])
+}
+```
+
+2. Implement endpoints:
+   - `POST /support/tickets` - Create support ticket
+   - `GET /support/tickets/:id` - Get ticket details
+   - `POST /support/tickets/:id/reply` - Add reply (admin only)
+   - `PATCH /support/tickets/:id/status` - Update status (admin)
+   - `POST /reports` - Report content
+   - `GET /admin/reports` - List reports (admin only)
+   - `POST /admin/reports/:id/action` - Take action on report
+
+3. Auto-notification on ticket reply
+
+**Deliverables**:
+- Support ticket system
+- Content reporting
+- Admin response workflow
+
+---
+
+#### **Day 19 — Quality & Observability**
+**Goal**: Logging, monitoring, error tracking, performance optimization.
+
+**Tasks**:
+1. Install monitoring tools:
+   - `npm i @nestjs/terminus` (already installed)
+   - `npm i prom-client` (Prometheus metrics)
+
+2. Create monitoring endpoints:
+   - `GET /health` - Enhanced health check (already exists)
+   - `GET /metrics` - Prometheus metrics
+
+3. **Prometheus Metrics**:
+```typescript
+import { Counter, Histogram, register } from 'prom-client';
+
+// Request counter
+const httpRequestCounter = new Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'route', 'status']
+});
+
+// Response time histogram
+const httpRequestDuration = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request duration',
+  labelNames: ['method', 'route', 'status']
+});
+
+@Get('metrics')
+async getMetrics() {
+  return register.metrics();
+}
+```
+
+4. **Structured Logging** (use Winston):
+```typescript
+import * as winston from 'winston';
+
+const logger = winston.createLogger({
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' })
+  ]
+});
+```
+
+5. Add request ID tracking:
+   - Generate UUID for each request
+   - Include in logs and error responses
+   - Pass to downstream services
+
+6. Database query optimization:
+   - Add indexes for common queries
+   - Use `select` to limit fields
+   - Implement pagination everywhere
+
+**Deliverables**:
+- Prometheus metrics endpoint
+- Structured logging
+- Request ID tracking
+- Database optimization
+
+---
+
+#### **Day 20 — Deployment & Handoff**
+**Goal**: Production-ready containerization, CI/CD, documentation.
+
+**Tasks**:
+1. Create production Dockerfile:
+```dockerfile
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY prisma ./prisma
+
+EXPOSE 3000
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+```
+
+2. Setup GitHub Actions CI/CD:
+```yaml
+name: CI/CD
+on:
+  push:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to AWS ECS
+        # Add AWS ECS deployment steps
+```
+
+3. **AWS ECS Task Definition**:
+```json
+{
+  "family": "kumele-api",
+  "containerDefinitions": [
+    {
+      "name": "kumele-api",
+      "image": "your-registry/kumele-api:latest",
+      "cpu": 512,
+      "memory": 1024,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {"name": "NODE_ENV", "value": "production"}
+      ],
+      "secrets": [
+        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:..."},
+        {"name": "JWT_ACCESS_SECRET", "valueFrom": "arn:aws:secretsmanager:..."}
+      ]
+    }
+  ]
+}
+```
+
+4. **Documentation Checklist**:
+   - Complete Swagger/OpenAPI docs for all 61+ APIs
+   - Postman collection export
+   - README with:
+     * Setup instructions
+     * Environment variables
+     * Database migrations
+     * Running tests
+     * Deployment guide
+   - Architecture diagram
+   - API rate limits documentation
+   - Webhook payload examples
+
+5. **Handoff Package**:
+   - Complete codebase on GitHub
+   - Environment variables template
+   - Database seed script (test data)
+   - Admin account credentials
+   - Stripe/PayPal test accounts
+   - Firebase service account JSON
+
+**Deliverables**:
+- Production Dockerfile
+- GitHub Actions CI/CD pipeline
+- AWS ECS deployment guide
+- Complete documentation
+- Handoff package for frontend teams
+
+---
+
+## CRITICAL BUSINESS RULES (Must Enforce)
+
+### 1. Event Edit Lock
+- Once event.status = 'ACTIVE', host CANNOT edit any details
+- Host can only CANCEL active events
+- Canceled events affect host reputation score
+
+### 2. 10-Minute Payment Window
+- User reserves spot with status = 'RESERVED'
+- reservedUntil = now() + 10 minutes
+- Background job expires reservations every minute
+- Expired slots free up capacity for others
+
+### 3. Check-in Gating
+Check-in required for:
+- Posting event reviews
+- Claiming refunds
+- Earning reward points
+- Payment escrow release
+
+### 4. Chat Room Lifecycle
+- Auto-create on first confirmed join (status = 'JOINED')
+- closesAt = event.endsAt + 24 hours
+- Only JOINED users can access chat
+- Messages stored in PostgreSQL, live updates via Socket.IO
+
+### 5. Payment Escrow Release
+Release funds when ALL conditions met:
+- event.status = 'COMPLETED'
+- User has Checkin record
+- No pending refund dispute
+- 48 hours passed since event end
+
+### 6. Reward Tier Computation (30-day rolling window)
+- BRONZE: 3+ events attended
+- SILVER: 8+ events attended
+- GOLD: 15+ events attended
+- Recalculate nightly via cron job
+
+### 7. GPS Check-in Radius
+- Self check-in requires distance ≤ 2km from event location
+- Use Haversine formula for accurate distance calculation
+- Store actual distance in Checkin record for audit
+
+### 8. Content Moderation
+- Create ModerationJob for all UGC (blogs, comments, event descriptions)
+- Block content if decision = 'REJECT'
+- Show pending content to author only
+
+---
+
+## SECURITY BEST PRACTICES
+
+### 1. Authentication
+- Access tokens: 15 minutes TTL (short for security)
+- Refresh tokens: 30 days TTL, stored hashed with argon2
+- Implement refresh token rotation (invalidate old on use)
+- Support multiple sessions per user (track in Session table)
+
+### 2. Authorization
+- Use JwtAuthGuard globally with @Public() decorator exceptions
+- Implement RolesGuard for admin endpoints
+- Resource ownership checks (users can only edit their own content)
+
+### 3. Input Validation
+- Use class-validator on all DTOs
+- Enable whitelist: true (strip extra properties)
+- Validate file uploads (type, size, dimensions)
+- Sanitize HTML in blog content (prevent XSS)
+
+### 4. Rate Limiting
+- Global: 100 requests/minute per IP
+- Auth endpoints: 5 requests/minute per IP
+- Payment endpoints: 10 requests/minute per user
+- Chat: 10 messages/minute per user
+
+### 5. Webhook Security
+- Verify Stripe webhook signatures
+- Use idempotency keys for payment processing
+- Handle duplicate webhooks gracefully
+- Log all webhook events for debugging
+
+### 6. Data Privacy
+- Hash passwords with argon2 (never bcrypt)
+- Encrypt sensitive data at rest (payment details)
+- Mask PII in logs
+- Implement GDPR data export/deletion
+
+---
+
+## PERFORMANCE OPTIMIZATION
+
+### 1. Database
+- Add indexes on foreign keys
+- Add compound indexes for common queries:
+  - (userId, status) on EventJoin
+  - (eventId, status) on EventJoin
+  - (lat, lon) on Event (for location queries)
+  - (createdAt DESC) on BlogPost
+- Use connection pooling (Prisma default)
+- Enable query logging in development
+
+### 2. Caching (Redis)
+- User sessions (refresh tokens)
+- Matching algorithm results (TTL: 5 minutes)
+- App configuration (TTL: 1 hour)
+- Hobby taxonomy (TTL: 24 hours)
+- Rate limiting counters
+
+### 3. API Responses
+- Always paginate list endpoints (default limit: 20, max: 100)
+- Use cursor-based pagination for infinite scroll
+- Implement ETags for conditional requests
+- Compress responses with gzip
+
+### 4. Background Jobs (BullMQ)
+- Expire event reservations (every 1 minute)
+- Close chat rooms (every 1 hour)
+- Send event reminders (every 5 minutes)
+- Compute reward tiers (nightly at 2 AM)
+- Clean up expired sessions (daily)
+
+---
+
+## TESTING REQUIREMENTS
+
+### 1. Unit Tests
+- All service methods
+- Complex business logic (matching algorithm, distance calculation)
+- Payment escrow logic
+- Reward tier computation
+
+### 2. Integration Tests
+- Auth flow (signup → login → refresh)
+- Event lifecycle (create → activate → join → checkin → complete)
+- Payment flow (reserve → pay → hold → release)
+- Check-in validation (QR + GPS)
+
+### 3. E2E Tests (Light)
+- Complete user journey:
+  1. Signup + profile setup
+  2. Browse events
+  3. Join event + payment
+  4. Chat participation
+  5. Check-in
+  6. Post review
+  7. Earn reward
+
+---
+
+## COLLABORATION WITH FRONTEND TEAMS
+
+### 1. API Contract
+- Always return consistent response format:
+```json
+{
+  "ok": true,
+  "data": {...},
+  "meta": {
+    "page": 1,
+    "limit": 20,
+    "total": 150
+  }
+}
+```
+
+- Error format:
+```json
+{
+  "ok": false,
+  "statusCode": 400,
+  "error": "Validation failed",
+  "message": ["email must be valid", "name is required"],
+  "timestamp": "2026-01-16T10:30:00Z"
+}
+```
+
+### 2. WebSocket Events
+Document all Socket.IO events:
+- Client → Server: `join_room`, `send_message`, `typing_start`, `typing_stop`
+- Server → Client: `message_received`, `user_joined`, `user_left`, `room_closed`
+
+### 3. Push Notification Payload
+```json
+{
+  "notification": {
+    "title": "Event Reminder",
+    "body": "Your event starts in 1 hour!"
+  },
+  "data": {
+    "type": "EVENT_REMINDER",
+    "eventId": "event_123",
+    "deepLink": "kumele://events/event_123"
+  }
+}
+```
+
+### 4. Image URL Format
+Always return full URLs (not paths):
+```json
+{
+  "avatarUrl": "https://cdn.kumele.com/avatars/user_123.jpg",
+  "eventBannerUrl": "https://cdn.kumele.com/events/event_456.jpg"
+}
+```
+
+---
+
+## AI CODING ASSISTANT GUIDELINES
+
+When implementing this project:
+
+### 1. Code Generation
+- Generate complete, production-ready code (not scaffolds)
+- Include all necessary imports
+- Add JSDoc comments for complex logic
+- Use TypeScript strict mode
+- Follow NestJS best practices (dependency injection, modules)
+
+### 2. Error Handling
+- Always throw appropriate HTTP exceptions (BadRequestException, NotFoundException, etc.)
+- Include helpful error messages
+- Log errors with stack traces
+- Never expose internal errors to clients
+
+### 3. Database Queries
+- Use Prisma transactions for multi-step operations
+- Always include error handling for database operations
+- Use `select` to limit returned fields
+- Implement soft deletes where appropriate
+
+### 4. Validation
+- Create DTOs for all request bodies
+- Use class-validator decorators
+- Add custom validators for complex rules
+- Return all validation errors at once (not one at a time)
+
+### 5. Testing
+- Generate Jest tests alongside code
+- Mock external services (Stripe, Firebase, Cloudinary)
+- Test edge cases and error conditions
+- Use test fixtures for consistent data
+
+---
+
+## HELPFUL COMMANDS
+
+### Development
+```bash
+# Start dev environment
+docker-compose up -d
+npm run start:dev
+
+# Run migrations
+npx prisma migrate dev --name <migration_name>
+npx prisma generate
+
+# Seed database
+npm run seed
+
+# Run tests
+npm run test
+npm run test:watch
+npm run test:cov
+```
+
+### Production
+```bash
+# Build
+npm run build
+
+# Run migrations
+npx prisma migrate deploy
+
+# Start with PM2
+pm2 start dist/main.js --name kumele-api
+
+# View logs
+pm2 logs kumele-api
+```
+
+### Database
+```bash
+# Prisma Studio (GUI)
+npx prisma studio
+
+# Reset database (DEV ONLY)
+npx prisma migrate reset
+
+# Generate Prisma Client
+npx prisma generate
+```
+
+---
+
+## PROJECT CONSTRAINTS & EXPECTATIONS
+
+### Timeline
+- **Total**: 3-4 weeks for 61-70 APIs
+- **Average**: 3-4 APIs per day
+- **Client Expectation**: Use AI extensively for coding and debugging
+
+### Budget
+- **Total**: $400 (split into 2 phases of $200 each)
+- **Phase 1**: Days 1-20 (this plan)
+- **Phase 2**: Refinement, optimization, additional features
+
+### Quality Standards
+- All APIs documented in Swagger
+- Unit test coverage > 70%
+- No console.log in production code
+- Proper error handling everywhere
+- Code passes ESLint with zero warnings
+
+### Deliverables
+- Complete NestJS backend
+- Swagger documentation
+- Postman collection
+- Database migrations
+- Docker setup
+- README with setup instructions
+- Admin panel template customization (provided by client)
+
+---
+
+## SUPPORT & ESCALATION
+
+### When to Ask Client (George)
+- Unclear business requirements
+- Payment provider credentials needed
+- AWS account access for deployment
+- Design decisions affecting UX
+- Budget/timeline constraints
+
+### When to Use AI Autonomously
+- Code implementation
+- Database schema refinement
+- API endpoint structure
+- Error handling patterns
+- Testing strategies
+- Performance optimization
+
+---
+
+## FINAL NOTES
+
+This is a **hobby project** with **production quality expectations**. The client values:
+1. **Speed**: Use AI extensively to move fast
+2. **Quality**: Clean, maintainable code
+3. **Security**: Proper auth, validation, error handling
+4. **Collaboration**: Clear API contracts for frontend teams
+5. **Documentation**: Swagger must be complete and accurate
+
+You are the **backend developer only**. Collaborate with:
+- iOS/Swift developer
+- Flutter/Android developer
+- Next.js/Web developer
+- AI/ML developer (separate role, not your concern)
+
+Focus on building **secure, scalable REST APIs** that enable these teams to build great user experiences.
+
+**Good luck! 🚀**
