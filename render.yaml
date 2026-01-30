@@ -68,6 +68,7 @@ services:
     region: frankfurt
     plan: free
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow connections from all Render services
 
 databases:
   # PostgreSQL database
