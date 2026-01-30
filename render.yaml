@@ -1,0 +1,78 @@
+# Render Blueprint - Kumele Backend
+# Deploy with: Link your GitHub repo to Render and select this file
+
+services:
+  # Main NestJS API
+  - type: web
+    name: kumele-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: node dist/main.js
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kumele-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: kumele-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: PLATFORM_FEE_PERCENT
+        value: "10"
+      - key: FX_CACHE_HOURS
+        value: "6"
+      - key: SOCKET_CORS_ORIGIN
+        value: "*"
+      - key: REFUND_FULL_HOURS_BEFORE
+        value: "24"
+      - key: REFUND_PARTIAL_HOURS_BEFORE
+        value: "6"
+      - key: REFUND_PARTIAL_PERCENT
+        value: "50"
+      - key: SUBSCRIPTION_GRACE_PERIOD_DAYS
+        value: "7"
+
+  # Redis for caching and pub/sub
+  - type: redis
+    name: kumele-redis
+    region: frankfurt
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+
+databases:
+  # PostgreSQL database
+  - name: kumele-db
+    region: frankfurt
+    plan: free
+    databaseName: kumele
+    user: kumele_user
