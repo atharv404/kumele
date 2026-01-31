@@ -27,6 +27,13 @@ import { DiscountsModule } from './modules/discounts/discounts.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { RefundsModule } from './modules/refunds/refunds.module';
 
+// Days 14-18 Feature Modules
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AdsModule } from './modules/ads/ads.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { UtilitiesModule } from './modules/utilities/utilities.module';
+import { SupportModule } from './modules/support/support.module';
+
 // Redis cache store
 import { redisStore } from 'cache-manager-ioredis-yet';
 
@@ -89,6 +96,13 @@ import { redisStore } from 'cache-manager-ioredis-yet';
     DiscountsModule,
     SubscriptionsModule,
     RefundsModule,
+
+    // Feature Modules (Days 14-18)
+    NotificationsModule,
+    AdsModule,
+    AdminModule,
+    UtilitiesModule,
+    SupportModule,
   ],
   providers: [
     // Global rate limiting guard

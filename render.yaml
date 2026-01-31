@@ -1,5 +1,6 @@
-# Render Blueprint - Kumele Backend
+# Render Blueprint - Kumele Backend (Days 1-18)
 # Deploy with: Link your GitHub repo to Render and select this file
+# Documentation: https://render.com/docs/blueprint-spec
 
 services:
   # Main NestJS API
@@ -8,14 +9,17 @@ services:
     runtime: node
     region: frankfurt
     plan: free
-    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build && npx prisma migrate deploy
     startCommand: node dist/main.js
     healthCheckPath: /api/v1/health
     envVars:
+      # Core
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3000
+      
+      # Database & Redis
       - key: DATABASE_URL
         fromDatabase:
           name: kumele-db
@@ -25,28 +29,78 @@ services:
           type: redis
           name: kumele-redis
           property: connectionString
+      
+      # JWT Authentication
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: "15m"
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: "7d"
+      
+      # Stripe Payments
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      
+      # Google OAuth
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false
+      
+      # Cloudinary Media Upload
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      
+      # Firebase FCM Push Notifications (Day 14)
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      
+      # SMTP Email Service (Day 14)
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        value: "noreply@kumele.com"
+      
+      # WebAuthn/Passkey
+      - key: WEBAUTHN_RP_NAME
+        value: "Kumele"
+      - key: WEBAUTHN_RP_ID
+        sync: false
+      - key: WEBAUTHN_ORIGIN
+        sync: false
+      
+      # App URLs
       - key: FRONTEND_URL
         sync: false
       - key: APP_URL
         sync: false
+      
+      # Support (Day 18)
+      - key: SUPPORT_EMAIL
+        value: "support@kumele.com"
+      
+      # Platform Settings
       - key: PLATFORM_FEE_PERCENT
         value: "10"
       - key: FX_CACHE_HOURS

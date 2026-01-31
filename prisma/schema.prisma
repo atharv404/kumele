@@ -211,6 +211,21 @@ model User {
   rewardHistory     RewardHistory[]
   refundRequests    RefundRequest[]
   rewardDiscounts   RewardDiscount[]
+  
+  // Days 14-18 relations
+  notificationsV2     NotificationV2[]
+  notificationTokens  NotificationToken[]
+  emailDeliveryLogs   EmailDeliveryLog[]
+  followers           Follow[]           @relation("FollowedRelation")
+  following           Follow[]           @relation("FollowerRelation")
+  adsCampaignsV2      AdsCampaignV2[]
+  moderatedAds        AdV2[]             @relation("AdModerator")
+  adEventsV2          AdEventV2[]
+  adminAuditLogs      AdminAuditLog[]    @relation("AdminAuditLogs")
+  shareTokens         ShareToken[]
+  mediaAssets         MediaAsset[]
+  supportTicketsV2    SupportTicketV2[]  @relation("SupportTicketsV2")
+  assignedTickets     SupportTicketV2[]  @relation("SupportTicketAssignee")
 
   @@index([email])
   @@index([googleId])
@@ -1241,4 +1256,295 @@ model Localization {
   @@unique([language, key])
   @@index([language])
   @@map("localizations")
+}
+
+// ==================== DAYS 14-18: NOTIFICATIONS, ADS, ADMIN, UTILITIES, SUPPORT ====================
+
+// Day 14: Enhanced Notifications
+model NotificationV2 {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // NotificationType enum values
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean  @default(false)
+  category  String?  // matched_events | created_events | other
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, isRead])
+  @@map("notifications_v2")
+}
+
+model NotificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  platform  String   // ios | android | web
+  fcmToken  String
+  deviceId  String?
+  language  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, fcmToken])
+  @@index([userId])
+  @@index([isActive])
+  @@map("notification_tokens")
+}
+
+model EmailDeliveryLog {
+  id                String   @id @default(uuid())
+  userId            String?
+  email             String
+  template          String
+  relatedEntityType String?
+  relatedEntityId   String?
+  status            String   // sent | failed
+  errorMessage      String?
+  createdAt         DateTime @default(now())
+  
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([status])
+  @@map("email_delivery_logs")
+}
+
+model Follow {
+  followerUserId String
+  followedUserId String
+  createdAt      DateTime @default(now())
+  
+  follower User @relation("FollowerRelation", fields: [followerUserId], references: [id], onDelete: Cascade)
+  followed User @relation("FollowedRelation", fields: [followedUserId], references: [id], onDelete: Cascade)
+  
+  @@id([followerUserId, followedUserId])
+  @@index([followedUserId])
+  @@index([followerUserId])
+  @@map("follows")
+}
+
+// Day 15: Ads System
+model AdsCampaignV2 {
+  id                 String   @id @default(uuid())
+  ownerId            String
+  name               String
+  status             String   @default("draft") // draft | active | paused | completed
+  dailyImpressionCap Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  owner User  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ads   AdV2[]
+  
+  @@index([ownerId])
+  @@index([status])
+  @@map("ads_campaigns_v2")
+}
+
+model AdV2 {
+  id                   String    @id @default(uuid())
+  campaignId           String
+  title                String
+  body                 String?
+  mediaUrl             String?
+  mediaType            String    // image | video | none
+  destinationType      String    // event | blog | external_url
+  destinationId        String?
+  destinationUrl       String?
+  targetHobbies        String[]  @default([])
+  targetLocations      String[]  @default([])
+  targetLanguages      String[]  @default([])
+  targetAgeMin         Int?
+  targetAgeMax         Int?
+  targetGender         String?
+  moderationStatus     String    @default("pending_review") // pending_review | approved | rejected | taken_down
+  moderationReasonCode String?
+  moderationReasonText String?
+  moderatedBy          String?
+  moderatedAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  
+  campaign   AdsCampaignV2   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  moderator  User?           @relation("AdModerator", fields: [moderatedBy], references: [id], onDelete: SetNull)
+  events     AdEventV2[]
+  dailyStats AdDailyStat[]
+  
+  @@index([campaignId])
+  @@index([moderationStatus])
+  @@map("ads_v2")
+}
+
+model AdEventV2 {
+  id           String   @id @default(uuid())
+  userId       String
+  adId         String
+  campaignId   String
+  impressionId String
+  eventType    String   // view | click | conversion
+  placement    String?  // EVENT_DECISION | NOTIFICATIONS
+  hobbyContext String?
+  createdAt    DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ad   AdV2 @relation(fields: [adId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, adId, eventType, impressionId])
+  @@index([adId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ad_events_v2")
+}
+
+model AdDailyStat {
+  id             String   @id @default(uuid())
+  adId           String
+  campaignId     String
+  date           DateTime @db.Date
+  impressions    Int      @default(0)
+  clicks         Int      @default(0)
+  conversions    Int      @default(0)
+  ctr            Float    @default(0)
+  conversionRate Float    @default(0)
+  updatedAt      DateTime @updatedAt
+  
+  ad AdV2 @relation(fields: [adId], references: [id], onDelete: Cascade)
+  
+  @@unique([adId, date])
+  @@index([campaignId])
+  @@map("ad_daily_stats")
+}
+
+model AdMobConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+  
+  @@map("admob_configs")
+}
+
+// Day 16: Admin & Moderation
+model AdminAuditLog {
+  id          String   @id @default(uuid())
+  adminUserId String
+  entityType  String   // user | event | blog | ad
+  entityId    String
+  action      String   // approve | reject | takedown | suspend | unsuspend
+  reasonCode  String?
+  reasonText  String?
+  createdAt   DateTime @default(now())
+  
+  admin User @relation("AdminAuditLogs", fields: [adminUserId], references: [id], onDelete: Restrict)
+  
+  @@index([adminUserId, createdAt(sort: Desc)])
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@map("admin_audit_logs")
+}
+
+// Day 17: Utilities
+model LocalizationString {
+  id        String   @id @default(uuid())
+  lang      String   // en | fr | es | de | ar | zh
+  namespace String   @default("ui")
+  key       String
+  value     String
+  version   Int      @default(1)
+  updatedAt DateTime @updatedAt
+  
+  @@unique([lang, namespace, key, version])
+  @@index([lang, version])
+  @@map("localization_strings")
+}
+
+model ShareToken {
+  id         String    @id @default(uuid())
+  token      String    @unique
+  entityType String    // event | blog
+  entityId   String
+  createdBy  String?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  
+  creator User? @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  
+  @@index([token])
+  @@index([entityType, entityId])
+  @@map("share_tokens")
+}
+
+model MediaAsset {
+  id         String   @id @default(uuid())
+  uploadedBy String
+  provider   String   // s3 | cloudinary
+  url        String
+  mediaType  String   // profile | blog | ad | event
+  entityId   String?
+  mimeType   String?
+  sizeBytes  Int?
+  width      Int?
+  height     Int?
+  duration   Int?
+  createdAt  DateTime @default(now())
+  
+  uploader User @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  
+  @@index([uploadedBy])
+  @@index([mediaType, entityId])
+  @@map("media_assets")
+}
+
+// Day 18: Support System
+model SupportTicketV2 {
+  id           String   @id @default(uuid())
+  ticketNumber String   @unique
+  userId       String
+  category     String   // account | payment | event | technical | report_user | report_content | feature_request | other
+  priority     String   @default("medium") // low | medium | high | urgent
+  status       String   @default("open") // open | in_progress | waiting_user | resolved | closed
+  subject      String
+  description  String
+  metadata     Json     @default("{}")
+  
+  relatedEntityId   String?
+  relatedEntityType String?
+  
+  assignedToId String?
+  resolvedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  user        User                      @relation("SupportTicketsV2", fields: [userId], references: [id], onDelete: Cascade)
+  assignedTo  User?                     @relation("SupportTicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  attachments SupportTicketAttachment[]
+  
+  @@index([status, createdAt(sort: Desc)])
+  @@index([category, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([priority, createdAt(sort: Desc)])
+  @@index([assignedToId])
+  @@map("support_tickets_v2")
+}
+
+model SupportTicketAttachment {
+  id        String   @id @default(uuid())
+  ticketId  String
+  url       String
+  fileName  String
+  fileType  String
+  fileSize  Int      @default(0)
+  createdAt DateTime @default(now())
+  
+  ticket SupportTicketV2 @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  @@index([ticketId])
+  @@map("support_ticket_attachments")
 }
