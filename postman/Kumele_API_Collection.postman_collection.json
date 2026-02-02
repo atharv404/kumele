@@ -1,0 +1,1764 @@
+{
+  "info": {
+    "name": "Kumele API",
+    "description": "Kumele Backend API - Social Meetup/Hobby Matching Application\n\n## Base URL\n- **Production**: https://kumele-api-37cf.onrender.com\n- **Local**: http://localhost:3000\n\n## Authentication\nMost endpoints require a Bearer token. Use `/auth/signup` or `/auth/login` to get tokens.\n\n## Features\n- User authentication (JWT, Google OAuth, Passkeys)\n- Event creation and management\n- Real-time chat (WebSocket)\n- Payment processing (Stripe)\n- Reward system (Bronze/Silver/Gold badges)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://kumele-api-37cf.onrender.com",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health"]
+            }
+          }
+        },
+        {
+          "name": "Liveness Probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health/live",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health", "live"]
+            }
+          }
+        },
+        {
+          "name": "Readiness Probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health/ready",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health", "ready"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Sign Up",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', jsonData.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"Test123!@#\",\n  \"name\": \"Test User\",\n  \"referralCode\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "signup"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', jsonData.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"Test123!@#\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "me"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', jsonData.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Logout All Devices",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout-all"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Name\",\n  \"bio\": \"My updated bio\",\n  \"location\": \"New York, NY\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Referral Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/referral-code",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "referral-code"]
+            }
+          }
+        },
+        {
+          "name": "Validate Referral Code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/referral-code/:code/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "referral-code", ":code", "validate"],
+              "variable": [
+                {
+                  "key": "code",
+                  "value": "ABCD1234"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Referrals",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/referrals",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "referrals"]
+            }
+          }
+        },
+        {
+          "name": "Get User QR Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:id/qr",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":id", "qr"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User Rewards",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:id/rewards",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":id", "rewards"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Profile Completeness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:id/profile-completeness",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":id", "profile-completeness"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User Attendance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:id/attendance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":id", "attendance"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-uuid-here"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Events",
+      "item": [
+        {
+          "name": "Create Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Coffee Meetup\",\n  \"description\": \"Casual coffee and networking\",\n  \"date\": \"2026-03-15T14:00:00.000Z\",\n  \"location\": \"Central Park Cafe\",\n  \"latitude\": 40.7829,\n  \"longitude\": -73.9654,\n  \"maxGuests\": 10,\n  \"price\": 0,\n  \"currency\": \"USD\",\n  \"hobbyIds\": []\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events"]
+            }
+          }
+        },
+        {
+          "name": "List Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Event by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Join Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:id/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":id", "join"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Event Participation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:id/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":id", "cancel"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Event Guests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:id/guests",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":id", "guests"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Host Scan Check-in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestId\": \"guest-user-uuid\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:id/checkin/host-scan",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":id", "checkin", "host-scan"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Self Check-in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 40.7829,\n  \"longitude\": -73.9654\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:id/checkin/self",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":id", "checkin", "self"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Finalize Event Matches",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:id/finalize-matches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":id", "finalize-matches"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Get Chat Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:eventId/chat/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":eventId", "chat", "status"],
+              "variable": [
+                {
+                  "key": "eventId",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Join Chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:eventId/chat/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":eventId", "chat", "join"],
+              "variable": [
+                {
+                  "key": "eventId",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Chat Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/:eventId/chat/messages?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ":eventId", "chat", "messages"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "eventId",
+                  "value": "event-uuid-here"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hobbies",
+      "item": [
+        {
+          "name": "Get Hobby Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hobbies/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hobbies", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Get Hobbies by Category",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hobbies/categories/:id/hobbies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hobbies", "categories", ":id", "hobbies"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "category-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User Hobbies",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hobbies/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hobbies", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update User Hobbies",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hobbyIds\": [\"hobby-uuid-1\", \"hobby-uuid-2\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hobbies/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hobbies", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Seed Hobbies (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hobbies/seed",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hobbies", "seed"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Blogs",
+      "item": [
+        {
+          "name": "List Blogs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/blogs?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "blogs"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Blog by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/blogs/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "blogs", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "blog-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Blog",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"My First Blog Post\",\n  \"content\": \"This is the content of my blog post.\",\n  \"tags\": [\"travel\", \"meetups\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/blogs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "blogs"]
+            }
+          }
+        },
+        {
+          "name": "Like Blog",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/blogs/:id/like",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "blogs", ":id", "like"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "blog-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Great post!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/blogs/:id/comments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "blogs", ":id", "comments"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "blog-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Comments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/blogs/:id/comments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "blogs", ":id", "comments"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "blog-uuid-here"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Create Event Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-uuid-here\",\n  \"currency\": \"USD\",\n  \"discountCode\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/event",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "event"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "history"]
+            }
+          }
+        },
+        {
+          "name": "Get Escrow Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/:id/escrow",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", ":id", "escrow"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "payment-uuid-here"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Discounts",
+      "item": [
+        {
+          "name": "Validate Discount Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SUMMER20\",\n  \"eventId\": \"event-uuid-here\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/discounts/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "discounts", "validate"]
+            }
+          }
+        },
+        {
+          "name": "Get My Rewards",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/discounts/rewards",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "discounts", "rewards"]
+            }
+          }
+        },
+        {
+          "name": "List Discounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/discounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "discounts"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "Get Subscription Tiers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/tiers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions", "tiers"]
+            }
+          }
+        },
+        {
+          "name": "Get My Subscription Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions", "status"]
+            }
+          }
+        },
+        {
+          "name": "Subscribe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tier\": \"SILVER\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions"]
+            }
+          }
+        },
+        {
+          "name": "Resume Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/resume",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions", "resume"]
+            }
+          }
+        },
+        {
+          "name": "Get Subscription History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions", "history"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refunds",
+      "item": [
+        {
+          "name": "Check Refund Eligibility",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/refunds/eligibility/:paymentId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "refunds", "eligibility", ":paymentId"],
+              "variable": [
+                {
+                  "key": "paymentId",
+                  "value": "payment-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Request Refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentId\": \"payment-uuid-here\",\n  \"reason\": \"Event was cancelled\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/refunds",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "refunds"]
+            }
+          }
+        },
+        {
+          "name": "Get My Refund Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/refunds/my-requests",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "refunds", "my-requests"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Register Push Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"fcm-device-token-here\",\n  \"platform\": \"ios\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/push-token",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "push-token"]
+            }
+          }
+        },
+        {
+          "name": "Get My Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/:id/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", ":id", "read"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "notification-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark All as Read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "read-all"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Support",
+      "item": [
+        {
+          "name": "Create Support Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Payment Issue\",\n  \"message\": \"I was charged twice for an event.\",\n  \"category\": \"PAYMENT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/support/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "support", "tickets"]
+            }
+          }
+        },
+        {
+          "name": "Get My Tickets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/support/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "support", "tickets"]
+            }
+          }
+        },
+        {
+          "name": "Get Ticket Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/support/tickets/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "support", "tickets", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ticket-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reply to Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Here is more information about my issue...\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/support/tickets/:id/reply",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "support", "tickets", ":id", "reply"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ticket-uuid-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Close Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/support/tickets/:id/close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "support", "tickets", ":id", "close"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ticket-uuid-here"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ads",
+      "item": [
+        {
+          "name": "Fetch Ads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ads/fetch?placement=feed&limit=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ads", "fetch"],
+              "query": [
+                {
+                  "key": "placement",
+                  "value": "feed"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Track Ad Interaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"adId\": \"ad-uuid-here\",\n  \"action\": \"click\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ads/track",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ads", "track"]
+            }
+          }
+        },
+        {
+          "name": "Get AdMob Context",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ads/admob/context",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ads", "admob", "context"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Localization",
+      "item": [
+        {
+          "name": "Get Localized Strings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/localization/strings?lang=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "localization", "strings"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Available Languages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/localization/languages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "localization", "languages"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "App Config",
+      "item": [
+        {
+          "name": "Get App Config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/app/config",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "app", "config"]
+            }
+          }
+        },
+        {
+          "name": "Simple Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/app/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "app", "health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Upload",
+      "item": [
+        {
+          "name": "Upload Image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/upload/image",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "upload", "image"]
+            }
+          }
+        },
+        {
+          "name": "Upload Event Banner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/upload/event-banner",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "upload", "event-banner"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
