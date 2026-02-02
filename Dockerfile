@@ -1,8 +1,13 @@
 # Dockerfile for Kumele API - Production Build
+# Using Debian-slim for Prisma OpenSSL compatibility
 
 # Build stage - needs all dependencies including dev for building
-FROM node:20-alpine AS build
+FROM node:20-slim AS build
 WORKDIR /app
+
+# Install OpenSSL for Prisma
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
 RUN npm ci
 COPY . .
@@ -10,21 +15,28 @@ RUN npx prisma generate
 RUN npm run build
 
 # Production dependencies only
-FROM node:20-alpine AS deps
+FROM node:20-slim AS deps
 WORKDIR /app
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 RUN npm ci --only=production
+# Need to regenerate prisma client in production deps
+COPY prisma ./prisma
+RUN npx prisma generate
 
-FROM node:20-alpine
+# Final stage
+FROM node:20-slim
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Install OpenSSL for Prisma runtime
+RUN apt-get update -y && apt-get install -y openssl wget && rm -rf /var/lib/apt/lists/*
+
 # Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nestjs -u 1001
+RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs nestjs
 
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules ./node_modules
 COPY prisma ./prisma
 COPY package*.json ./
 
