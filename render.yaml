@@ -31,7 +31,7 @@ services:
           property: connectionString
       
       # JWT Authentication
-      - key: JWT_SECRET
+      - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
