@@ -119,7 +119,8 @@ async function bootstrap() {
     },
   });
 
-  await app.listen(port);
+  // Listen on 0.0.0.0 for Render.com (not just localhost)
+  await app.listen(port, '0.0.0.0');
 
   const appUrl = configService.get<string>('APP_URL') || `http://localhost:${port}`;
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
