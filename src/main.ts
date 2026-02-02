@@ -11,7 +11,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('APP_PORT', 3000);
+  // Render uses PORT, fallback to APP_PORT for local dev
+  const port = configService.get<number>('PORT') || configService.get<number>('APP_PORT', 3000);
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
   const corsOrigin = configService.get<string>('CORS_ORIGIN', 'http://localhost:3000');
 
