@@ -13,7 +13,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   // Render uses PORT, fallback to APP_PORT for local dev
   const port = configService.get<number>('PORT') || configService.get<number>('APP_PORT', 3000);
-  const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
+  const apiPrefix = configService.get<string>('API_PREFIX', 'api');
 
   // Simple health endpoint at root for Render.com (before any middleware)
   const httpAdapter = app.getHttpAdapter();

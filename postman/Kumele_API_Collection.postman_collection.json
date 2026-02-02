@@ -26,7 +26,20 @@
       "name": "Health",
       "item": [
         {
-          "name": "Health Check",
+          "name": "Simple Health (Root)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Simple health endpoint for load balancers and quick checks"
+          }
+        },
+        {
+          "name": "Health Check (Full)",
           "request": {
             "method": "GET",
             "header": [],
@@ -34,7 +47,8 @@
               "raw": "{{baseUrl}}/api/v1/health",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "health"]
-            }
+            },
+            "description": "Full health check including database and Redis status"
           }
         },
         {
