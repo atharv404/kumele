@@ -9,9 +9,9 @@ import { JwtPayload } from '../services/token.service';
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   constructor(private readonly configService: ConfigService) {
-    const secretOrKey = configService.get<string>('JWT_REFRESH_SECRET');
-    if (!secretOrKey) {
-      throw new Error('JWT_REFRESH_SECRET is not defined');
+    const secretOrKey = configService.get<string>('JWT_REFRESH_SECRET') || 'default-jwt-refresh-secret-change-in-production';
+    if (process.env.NODE_ENV === 'production' && secretOrKey === 'default-jwt-refresh-secret-change-in-production') {
+      throw new Error('JWT_REFRESH_SECRET must be set in production');
     }
 
     super({

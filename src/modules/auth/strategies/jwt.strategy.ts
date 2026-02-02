@@ -12,9 +12,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
   ) {
-    const secretOrKey = configService.get<string>('JWT_ACCESS_SECRET');
-    if (!secretOrKey) {
-      throw new Error('JWT_ACCESS_SECRET is not defined');
+    const secretOrKey = configService.get<string>('JWT_ACCESS_SECRET') || 'default-jwt-secret-change-in-production';
+    if (process.env.NODE_ENV === 'production' && secretOrKey === 'default-jwt-secret-change-in-production') {
+      throw new Error('JWT_ACCESS_SECRET must be set in production');
     }
 
     super({
