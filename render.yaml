@@ -94,7 +94,9 @@ services:
       - key: FRONTEND_URL
         sync: false
       - key: APP_URL
-        sync: false
+        value: "https://kumele-api-37cf.onrender.com"
+      - key: CORS_ORIGIN
+        value: "*"
       
       # Support (Day 18)
       - key: SUPPORT_EMAIL

@@ -11,39 +11,63 @@ export class RedisPubSubService implements OnModuleInit, OnModuleDestroy {
   private publisher: Redis | null = null;
   private subscriber: Redis | null = null;
   private handlers: Map<string, Set<MessageHandler>> = new Map();
+  private _isRedisConnected = false;
 
   constructor(private configService: ConfigService) {}
 
   async onModuleInit() {
-    const redisUrl = this.configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+    const redisUrl = this.configService.get<string>('REDIS_URL');
+    
+    // Skip Redis if URL not configured (graceful degradation)
+    if (!redisUrl) {
+      this.logger.warn('REDIS_URL not configured - pub/sub features disabled, using local events only');
+      return;
+    }
     
     try {
-      // Create publisher connection
+      // Create publisher connection with limited retries
       this.publisher = new Redis(redisUrl, {
         maxRetriesPerRequest: 3,
-        retryStrategy: (times) => Math.min(times * 100, 3000),
+        retryStrategy: (times) => {
+          if (times > 5) {
+            this.logger.warn('Redis connection failed after 5 retries, disabling');
+            return null; // Stop retrying
+          }
+          return Math.min(times * 200, 2000);
+        },
+        lazyConnect: true,
+        enableOfflineQueue: false,
       });
 
       this.publisher.on('connect', () => {
+        this._isRedisConnected = true;
         this.logger.log('Redis publisher connected');
       });
 
       this.publisher.on('error', (err) => {
-        this.logger.error(`Redis publisher error: ${err.message}`);
+        if (this._isRedisConnected) {
+          this.logger.error(`Redis publisher error: ${err.message}`);
+        }
+        this._isRedisConnected = false;
       });
 
       // Create subscriber connection
       this.subscriber = new Redis(redisUrl, {
         maxRetriesPerRequest: 3,
-        retryStrategy: (times) => Math.min(times * 100, 3000),
+        retryStrategy: (times) => {
+          if (times > 5) return null;
+          return Math.min(times * 200, 2000);
+        },
+        lazyConnect: true,
+        enableOfflineQueue: false,
       });
 
       this.subscriber.on('connect', () => {
         this.logger.log('Redis subscriber connected');
       });
 
-      this.subscriber.on('error', (err) => {
-        this.logger.error(`Redis subscriber error: ${err.message}`);
+      this.subscriber.on('error', () => {
+        // Silently handle - already logged by publisher
       });
 
       // Handle incoming messages
@@ -51,8 +75,16 @@ export class RedisPubSubService implements OnModuleInit, OnModuleDestroy {
         this.handleMessage(channel, message);
       });
 
+      // Attempt connection
+      await Promise.all([
+        this.publisher.connect().catch(() => {}),
+        this.subscriber.connect().catch(() => {}),
+      ]);
+
     } catch (error: any) {
-      this.logger.error(`Failed to initialize Redis: ${error.message}`);
+      this.logger.warn(`Redis initialization skipped: ${error.message}`);
+      this.publisher = null;
+      this.subscriber = null;
     }
   }
 

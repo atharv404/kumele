@@ -108,14 +108,18 @@ async function bootstrap() {
 
   await app.listen(port);
 
+  const appUrl = configService.get<string>('APP_URL') || `http://localhost:${port}`;
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  
   console.log(`
   ╔════════════════════════════════════════════════════════════╗
   ║                                                            ║
   ║   🚀 Kumele API Server Started Successfully!               ║
   ║                                                            ║
-  ║   📍 Server:    http://localhost:${port}                      ║
-  ║   📚 API Docs:  http://localhost:${port}/docs                 ║
-  ║   ❤️  Health:   http://localhost:${port}/${apiPrefix}/health      ║
+  ║   🌍 Environment: ${nodeEnv.padEnd(40)}║
+  ║   📍 Server:      ${appUrl.padEnd(39)}║
+  ║   📚 API Docs:    ${(appUrl + '/docs').padEnd(39)}║
+  ║   ❤️  Health:     ${(appUrl + '/' + apiPrefix + '/health').padEnd(39)}║
   ║                                                            ║
   ╚════════════════════════════════════════════════════════════╝
   `);

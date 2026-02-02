@@ -57,19 +57,38 @@ import { redisStore } from 'cache-manager-ioredis-yet';
       ],
     }),
 
-    // Redis Cache
+    // Redis Cache - gracefully handles missing Redis
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => ({
-        store: await redisStore({
-          host: configService.get<string>('REDIS_HOST', 'localhost'),
-          port: configService.get<number>('REDIS_PORT', 6379),
-          password: configService.get<string>('REDIS_PASSWORD', ''),
-          ttl: 60 * 1000, // 60 seconds default TTL
-        }),
-      }),
+      useFactory: async (configService: ConfigService) => {
+        const redisUrl = configService.get<string>('REDIS_URL');
+        
+        if (redisUrl) {
+          try {
+            // Parse Redis URL for connection
+            const url = new URL(redisUrl);
+            return {
+              store: await redisStore({
+                host: url.hostname,
+                port: parseInt(url.port) || 6379,
+                password: url.password || undefined,
+                ttl: 60 * 1000,
+                lazyConnect: true,
+                maxRetriesPerRequest: 3,
+              }),
+            };
+          } catch (error) {
+            console.warn('[CacheModule] Redis URL invalid, using memory cache');
+            return { ttl: 60 * 1000 }; // Fallback to memory cache
+          }
+        }
+        
+        // Fallback: use in-memory cache if no Redis configured
+        console.warn('[CacheModule] REDIS_URL not set, using memory cache');
+        return { ttl: 60 * 1000 };
+      },
     }),
 
     // Prisma
