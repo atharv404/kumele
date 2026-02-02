@@ -55,11 +55,11 @@ export class HealthController {
   @ApiResponse({ status: 503, description: 'Health check failed' })
   async check() {
     return this.health.check([
-      // Database check
+      // Database check (required)
       () => this.prismaHealth.isHealthy('database'),
 
-      // Redis check
-      () => this.redisHealth.isHealthy('redis'),
+      // Redis check (optional - soft check, won't fail if Redis unavailable)
+      () => this.redisHealth.isHealthySoft('redis'),
 
       // Memory check (heap should be less than 500MB)
       () => this.memory.checkHeap('memory_heap', 500 * 1024 * 1024),
@@ -90,7 +90,7 @@ export class HealthController {
   async readiness() {
     return this.health.check([
       () => this.prismaHealth.isHealthy('database'),
-      () => this.redisHealth.isHealthy('redis'),
+      () => this.redisHealth.isHealthySoft('redis'),
     ]);
   }
 }
