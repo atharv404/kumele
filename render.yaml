@@ -11,13 +11,12 @@ services:
     plan: free
     buildCommand: npm ci --include=dev && npx prisma generate && npm run build && npx prisma migrate deploy
     startCommand: node dist/main.js
-    healthCheckPath: /api/v1/health
+    healthCheckPath: /health
     envVars:
       # Core
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
+      # Note: PORT is automatically set by Render, don't override it
       
       # Database & Redis
       - key: DATABASE_URL

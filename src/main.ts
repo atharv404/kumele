@@ -14,6 +14,15 @@ async function bootstrap() {
   // Render uses PORT, fallback to APP_PORT for local dev
   const port = configService.get<number>('PORT') || configService.get<number>('APP_PORT', 3000);
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
+
+  // Simple health endpoint at root for Render.com (before any middleware)
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get('/health', (req: any, res: any) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+  httpAdapter.get('/', (req: any, res: any) => {
+    res.status(200).json({ status: 'ok', message: 'Kumele API is running' });
+  });
   const corsOrigin = configService.get<string>('CORS_ORIGIN', 'http://localhost:3000');
 
   // Security middleware - configure helmet to allow Swagger UI
