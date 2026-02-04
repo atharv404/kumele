@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DevSeedController } from './dev-seed.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { PasswordService } from '../auth/services/password.service';
 
 /**
  * ⚠️ TEMPORARY MODULE FOR DEMO PURPOSES ONLY
@@ -11,5 +12,6 @@ import { PrismaModule } from '../../prisma/prisma.module';
 @Module({
   imports: [PrismaModule],
   controllers: [DevSeedController],
+  providers: [PasswordService],
 })
 export class DevModule {}

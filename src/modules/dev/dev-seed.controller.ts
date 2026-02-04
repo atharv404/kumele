@@ -1,7 +1,7 @@
 import { Controller, Post, Get, Delete } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { PrismaService } from '../../prisma/prisma.service';
-import * as bcrypt from 'bcrypt';
+import { PasswordService } from '../auth/services/password.service';
 import { Public } from '../../common/decorators/public.decorator';
 
 /**
@@ -17,7 +17,10 @@ import { Public } from '../../common/decorators/public.decorator';
 @ApiTags('dev')
 @Controller('dev')
 export class DevSeedController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private passwordService: PasswordService,
+  ) {}
 
   @Post('seed')
   @Public()
@@ -27,7 +30,7 @@ export class DevSeedController {
     console.log('🌱 Starting demo seed via API...');
 
     // Password: Demo@1234
-    const passwordHash = await bcrypt.hash('Demo@1234', 10);
+    const passwordHash = await this.passwordService.hash('Demo@1234');
 
     try {
       // Cleanup first

@@ -6,7 +6,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
@@ -14,7 +14,12 @@ async function main() {
   console.log('🌱 Starting demo seed...\n');
 
   // Password for all demo users: Demo@1234
-  const passwordHash = await bcrypt.hash('Demo@1234', 10);
+  const passwordHash = await argon2.hash('Demo@1234', {
+    type: argon2.argon2id,
+    memoryCost: 65536,
+    timeCost: 3,
+    parallelism: 4,
+  });
   console.log('📝 Generated password hash');
 
   // ==================== CLEANUP ====================
