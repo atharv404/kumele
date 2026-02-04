@@ -265,7 +265,7 @@ export class DevSeedController {
 
       // Step 2: Create EventJoin directly (bypass matching)
       const existingJoin = await this.prisma.eventJoin.findFirst({
-        where: { eventId: event.id, participantId: user.id }
+        where: { eventId: event.id, userId: user.id }
       });
       
       let eventJoin;
@@ -275,8 +275,8 @@ export class DevSeedController {
         eventJoin = await this.prisma.eventJoin.create({
           data: {
             eventId: event.id,
-            participantId: user.id,
-            status: 'ACCEPTED',
+            userId: user.id,
+            status: 'CONFIRMED',
             matchScore: 85.5, // Demo match score
           }
         });
@@ -284,28 +284,32 @@ export class DevSeedController {
 
       // Step 3: Create mock PaymentIntent
       const paymentId = `pi_demo_${Date.now()}`;
+      const amountMinor = 4000; // $40.00 in cents
       const payment = await this.prisma.paymentIntent.create({
         data: {
           stripeId: paymentId,
           userId: user.id,
           eventId: event.id,
-          amount: event.price || 4000, // $40.00 in cents
-          currency: 'usd',
+          amount: amountMinor / 100, // Decimal amount
+          amountMinor: amountMinor,
+          currency: 'USD',
           status: 'SUCCEEDED',
         }
       });
 
       // Step 4: Create Escrow record (HELD state)
+      const eventEndAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours from now
       const escrow = await this.prisma.escrow.create({
         data: {
           paymentIntentId: payment.id,
           eventId: event.id,
           hostId: event.hostId,
-          participantId: user.id,
-          amount: event.price || 4000,
+          amountMinor: amountMinor,
+          currency: 'USD',
           status: 'HELD',
           attendanceVerified: false,
-          releaseDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+          eventEndAt: eventEndAt,
+          releaseAt: new Date(eventEndAt.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days after event
         }
       });
 
@@ -320,14 +324,14 @@ export class DevSeedController {
           },
           step2_payment: {
             paymentIntentId: payment.stripeId,
-            amount: `$${(payment.amount / 100).toFixed(2)}`,
+            amount: `$${(payment.amountMinor / 100).toFixed(2)}`,
             status: payment.status,
           },
           step3_escrow: {
             escrowId: escrow.id,
             status: escrow.status,
-            amount: `$${(escrow.amount / 100).toFixed(2)}`,
-            releaseDate: escrow.releaseDate,
+            amount: `$${(escrow.amountMinor / 100).toFixed(2)}`,
+            releaseAt: escrow.releaseAt,
             attendanceVerified: escrow.attendanceVerified,
           }
         },
@@ -349,7 +353,7 @@ export class DevSeedController {
     try {
       const escrow = await this.prisma.escrow.findFirst({
         where: { eventId: 'event-demo-001', status: 'HELD' },
-        include: { event: true }
+        include: { paymentIntent: { include: { event: true, user: true } } }
       });
 
       if (!escrow) {
@@ -366,15 +370,18 @@ export class DevSeedController {
       });
 
       // Create checkin record
-      await this.prisma.checkin.create({
-        data: {
-          userId: escrow.participantId,
-          eventId: escrow.eventId,
-          method: 'QR_CODE',
-          latitude: 40.7128,
-          longitude: -74.0060,
-        }
-      }).catch(() => {}); // Ignore if already exists
+      const userId = escrow.paymentIntent?.userId;
+      if (userId) {
+        await this.prisma.checkin.create({
+          data: {
+            userId: userId,
+            eventId: escrow.eventId,
+            method: 'HOST_VERIFIED',
+            latitude: 40.7128,
+            longitude: -74.0060,
+          }
+        }).catch(() => {}); // Ignore if already exists
+      }
 
       return {
         success: true,
@@ -383,7 +390,7 @@ export class DevSeedController {
           escrowId: updated.id,
           status: updated.status,
           attendanceVerified: updated.attendanceVerified,
-          eventTitle: escrow.event?.title,
+          eventTitle: escrow.paymentIntent?.event?.title,
         },
         nextStep: 'Use POST /dev/escrow/release to release funds to host'
       };
@@ -399,7 +406,7 @@ export class DevSeedController {
     try {
       const escrow = await this.prisma.escrow.findFirst({
         where: { eventId: 'event-demo-001', status: 'HELD' },
-        include: { event: { include: { host: true } } }
+        include: { paymentIntent: { include: { event: { include: { host: true } } } } }
       });
 
       if (!escrow) {
@@ -427,8 +434,8 @@ export class DevSeedController {
       });
 
       // Platform fee calculation (15%)
-      const platformFee = Math.round(escrow.amount * 0.15);
-      const hostPayout = escrow.amount - platformFee;
+      const platformFee = Math.round(escrow.amountMinor * 0.15);
+      const hostPayout = escrow.amountMinor - platformFee;
 
       return {
         success: true,
@@ -438,13 +445,13 @@ export class DevSeedController {
           status: released.status,
           releasedAt: released.releasedAt,
           financials: {
-            totalAmount: `$${(escrow.amount / 100).toFixed(2)}`,
+            totalAmount: `$${(escrow.amountMinor / 100).toFixed(2)}`,
             platformFee: `$${(platformFee / 100).toFixed(2)} (15%)`,
             hostPayout: `$${(hostPayout / 100).toFixed(2)}`,
           },
           host: {
-            name: escrow.event?.host?.displayName,
-            email: escrow.event?.host?.email,
+            name: escrow.paymentIntent?.event?.host?.displayName,
+            email: escrow.paymentIntent?.event?.host?.email,
           }
         },
         summary: '💡 Demo complete! The escrow flow protects both attendees and hosts.'
@@ -461,8 +468,9 @@ export class DevSeedController {
     const escrow = await this.prisma.escrow.findFirst({
       where: { eventId: 'event-demo-001' },
       include: {
-        event: { select: { title: true, price: true } },
-        paymentIntent: { select: { stripeId: true, status: true } }
+        paymentIntent: { 
+          select: { stripeId: true, status: true, event: { select: { title: true, price: true } } } 
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -479,13 +487,13 @@ export class DevSeedController {
       escrow: {
         id: escrow.id,
         status: escrow.status,
-        amount: `$${(escrow.amount / 100).toFixed(2)}`,
+        amount: `$${(escrow.amountMinor / 100).toFixed(2)}`,
         attendanceVerified: escrow.attendanceVerified,
-        releaseDate: escrow.releaseDate,
+        releaseAt: escrow.releaseAt,
         releasedAt: escrow.releasedAt,
       },
-      event: escrow.event,
-      payment: escrow.paymentIntent,
+      event: escrow.paymentIntent?.event,
+      payment: { stripeId: escrow.paymentIntent?.stripeId, status: escrow.paymentIntent?.status },
       flowStatus: {
         step1_payment: '✅ Completed',
         step2_escrow_held: escrow.status === 'HELD' || escrow.status === 'RELEASED' ? '✅ Completed' : '⏳ Pending',
