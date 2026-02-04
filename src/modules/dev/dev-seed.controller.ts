@@ -300,9 +300,11 @@ export class DevSeedController {
         });
       }
 
-      // Step 3: Create or get Stripe Customer
+      // Step 3: Create FRESH Stripe Customer (ignore fake seed data)
       let stripeCustomerId = user.stripeCustomerId;
-      if (!stripeCustomerId) {
+      
+      // Always create a new customer if it looks like fake data or doesn't exist
+      if (!stripeCustomerId || stripeCustomerId.startsWith('cus_demo')) {
         const customer = await this.stripe.customers.create({
           email: user.email,
           name: user.displayName || 'Demo User',
