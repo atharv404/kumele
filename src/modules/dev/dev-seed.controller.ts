@@ -239,6 +239,262 @@ export class DevSeedController {
     };
   }
 
+  // ============================================
+  // DEMO ESCROW SIMULATION ENDPOINTS
+  // ============================================
+  
+  @Post('escrow/simulate')
+  @Public()
+  @ApiOperation({ summary: '🎯 DEMO: Simulate complete escrow payment flow' })
+  async simulateEscrowFlow() {
+    try {
+      // Step 1: Verify demo data exists
+      const user = await this.prisma.user.findUnique({
+        where: { email: 'user-demo@kumele.com' }
+      });
+      const event = await this.prisma.event.findUnique({
+        where: { id: 'event-demo-001' }
+      });
+
+      if (!user || !event) {
+        return {
+          success: false,
+          error: 'Demo data not found. Please run POST /dev/seed first.'
+        };
+      }
+
+      // Step 2: Create EventJoin directly (bypass matching)
+      const existingJoin = await this.prisma.eventJoin.findFirst({
+        where: { eventId: event.id, participantId: user.id }
+      });
+      
+      let eventJoin;
+      if (existingJoin) {
+        eventJoin = existingJoin;
+      } else {
+        eventJoin = await this.prisma.eventJoin.create({
+          data: {
+            eventId: event.id,
+            participantId: user.id,
+            status: 'ACCEPTED',
+            matchScore: 85.5, // Demo match score
+          }
+        });
+      }
+
+      // Step 3: Create mock PaymentIntent
+      const paymentId = `pi_demo_${Date.now()}`;
+      const payment = await this.prisma.paymentIntent.create({
+        data: {
+          stripeId: paymentId,
+          userId: user.id,
+          eventId: event.id,
+          amount: event.price || 4000, // $40.00 in cents
+          currency: 'usd',
+          status: 'SUCCEEDED',
+        }
+      });
+
+      // Step 4: Create Escrow record (HELD state)
+      const escrow = await this.prisma.escrow.create({
+        data: {
+          paymentIntentId: payment.id,
+          eventId: event.id,
+          hostId: event.hostId,
+          participantId: user.id,
+          amount: event.price || 4000,
+          status: 'HELD',
+          attendanceVerified: false,
+          releaseDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+        }
+      });
+
+      return {
+        success: true,
+        message: '✅ Escrow flow simulated! Payment captured and held in escrow.',
+        demo: {
+          step1_join: {
+            eventJoinId: eventJoin.id,
+            matchScore: eventJoin.matchScore,
+            status: eventJoin.status,
+          },
+          step2_payment: {
+            paymentIntentId: payment.stripeId,
+            amount: `$${(payment.amount / 100).toFixed(2)}`,
+            status: payment.status,
+          },
+          step3_escrow: {
+            escrowId: escrow.id,
+            status: escrow.status,
+            amount: `$${(escrow.amount / 100).toFixed(2)}`,
+            releaseDate: escrow.releaseDate,
+            attendanceVerified: escrow.attendanceVerified,
+          }
+        },
+        nextSteps: [
+          '1️⃣ Use POST /dev/escrow/checkin to simulate attendance verification',
+          '2️⃣ Use POST /dev/escrow/release to release funds to host'
+        ]
+      };
+    } catch (error: any) {
+      console.error('Escrow simulation failed:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  @Post('escrow/checkin')
+  @Public()
+  @ApiOperation({ summary: '🎯 DEMO: Simulate check-in (attendance verified)' })
+  async simulateCheckin() {
+    try {
+      const escrow = await this.prisma.escrow.findFirst({
+        where: { eventId: 'event-demo-001', status: 'HELD' },
+        include: { event: true }
+      });
+
+      if (!escrow) {
+        return {
+          success: false,
+          error: 'No escrow found. Run POST /dev/escrow/simulate first.'
+        };
+      }
+
+      // Update escrow to mark attendance verified
+      const updated = await this.prisma.escrow.update({
+        where: { id: escrow.id },
+        data: { attendanceVerified: true }
+      });
+
+      // Create checkin record
+      await this.prisma.checkin.create({
+        data: {
+          userId: escrow.participantId,
+          eventId: escrow.eventId,
+          method: 'QR_CODE',
+          latitude: 40.7128,
+          longitude: -74.0060,
+        }
+      }).catch(() => {}); // Ignore if already exists
+
+      return {
+        success: true,
+        message: '✅ Attendance verified! User checked in to event.',
+        demo: {
+          escrowId: updated.id,
+          status: updated.status,
+          attendanceVerified: updated.attendanceVerified,
+          eventTitle: escrow.event?.title,
+        },
+        nextStep: 'Use POST /dev/escrow/release to release funds to host'
+      };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  @Post('escrow/release')
+  @Public()
+  @ApiOperation({ summary: '🎯 DEMO: Release escrow funds to host' })
+  async simulateRelease() {
+    try {
+      const escrow = await this.prisma.escrow.findFirst({
+        where: { eventId: 'event-demo-001', status: 'HELD' },
+        include: { event: { include: { host: true } } }
+      });
+
+      if (!escrow) {
+        return {
+          success: false,
+          error: 'No held escrow found. Run the full demo flow first.'
+        };
+      }
+
+      if (!escrow.attendanceVerified) {
+        return {
+          success: false,
+          error: 'Attendance not verified. Run POST /dev/escrow/checkin first.',
+          currentStatus: { escrowId: escrow.id, attendanceVerified: false }
+        };
+      }
+
+      // Release escrow
+      const released = await this.prisma.escrow.update({
+        where: { id: escrow.id },
+        data: {
+          status: 'RELEASED',
+          releasedAt: new Date()
+        }
+      });
+
+      // Platform fee calculation (15%)
+      const platformFee = Math.round(escrow.amount * 0.15);
+      const hostPayout = escrow.amount - platformFee;
+
+      return {
+        success: true,
+        message: '🎉 Escrow RELEASED! Funds transferred to host.',
+        demo: {
+          escrowId: released.id,
+          status: released.status,
+          releasedAt: released.releasedAt,
+          financials: {
+            totalAmount: `$${(escrow.amount / 100).toFixed(2)}`,
+            platformFee: `$${(platformFee / 100).toFixed(2)} (15%)`,
+            hostPayout: `$${(hostPayout / 100).toFixed(2)}`,
+          },
+          host: {
+            name: escrow.event?.host?.displayName,
+            email: escrow.event?.host?.email,
+          }
+        },
+        summary: '💡 Demo complete! The escrow flow protects both attendees and hosts.'
+      };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  @Get('escrow/status')
+  @Public()
+  @ApiOperation({ summary: '📊 DEMO: Check current escrow status' })
+  async getEscrowStatus() {
+    const escrow = await this.prisma.escrow.findFirst({
+      where: { eventId: 'event-demo-001' },
+      include: {
+        event: { select: { title: true, price: true } },
+        paymentIntent: { select: { stripeId: true, status: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!escrow) {
+      return {
+        exists: false,
+        message: 'No escrow found. Start with POST /dev/escrow/simulate'
+      };
+    }
+
+    return {
+      exists: true,
+      escrow: {
+        id: escrow.id,
+        status: escrow.status,
+        amount: `$${(escrow.amount / 100).toFixed(2)}`,
+        attendanceVerified: escrow.attendanceVerified,
+        releaseDate: escrow.releaseDate,
+        releasedAt: escrow.releasedAt,
+      },
+      event: escrow.event,
+      payment: escrow.paymentIntent,
+      flowStatus: {
+        step1_payment: '✅ Completed',
+        step2_escrow_held: escrow.status === 'HELD' || escrow.status === 'RELEASED' ? '✅ Completed' : '⏳ Pending',
+        step3_checkin: escrow.attendanceVerified ? '✅ Verified' : '⏳ Pending',
+        step4_release: escrow.status === 'RELEASED' ? '✅ Released' : '⏳ Pending',
+      }
+    };
+  }
+
   private async cleanupDemoData() {
     // Delete in correct order (respect foreign keys)
     try {
