@@ -320,6 +320,10 @@ export class EventsService {
       },
     });
 
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
     // 4. Trigger matching (AI + fallback)
     const matchResult = await this.performMatching(user, event);
 
@@ -447,8 +451,8 @@ export class EventsService {
             };
           }
         }
-      } catch (error) {
-        this.logger.warn(`ML matching failed, using fallback: ${error.message}`);
+      } catch (error: any) {
+        this.logger.warn(`ML matching failed, using fallback: ${error?.message || 'Unknown error'}`);
         // Fall through to fallback
       }
     }
@@ -502,15 +506,19 @@ export class EventsService {
     }
 
     // 3. Time score (20 points)
-    const eventStartTime = event.eventStartTime || event.startsAt;
-    const hoursUntilStart = (eventStartTime.getTime() - Date.now()) / (1000 * 60 * 60);
-    if (hoursUntilStart <= 24) {
-      score += 20;
-      reasons.push('starting_soon');
-    } else if (hoursUntilStart <= 72) {
-      score += 10;
-    } else {
-      score += 5;
+    const eventStartTimeRaw = event.eventStartTime || event.startsAt;
+    const eventStartTime = eventStartTimeRaw ? new Date(eventStartTimeRaw) : null;
+    
+    if (eventStartTime) {
+      const hoursUntilStart = (eventStartTime.getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntilStart <= 24) {
+        score += 20;
+        reasons.push('starting_soon');
+      } else if (hoursUntilStart <= 72) {
+        score += 10;
+      } else {
+        score += 5;
+      }
     }
 
     // 4. Availability score (20 points)
