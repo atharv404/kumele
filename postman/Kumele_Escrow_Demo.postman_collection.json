@@ -1,0 +1,662 @@
+{
+  "info": {
+    "name": "🎯 Kumele Escrow Demo",
+    "description": "# Stripe Escrow Demo Collection\n\n## Quick Start\n1. Run **0️⃣ Wake Up Backend** first (if cold start)\n2. Run **1️⃣ Seed Demo Data** to create test users/events\n3. Follow the numbered sequence for demo flow\n\n## Demo Users\n- **user-demo@kumele.com** - Regular user\n- **host-demo@kumele.com** - Event host\n- **admin-demo@kumele.com** - Admin\n- **Password for all:** Demo@1234\n\n## Test Card\n- Number: 4242 4242 4242 4242\n- Expiry: 12/28\n- CVC: 123",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://kumele-api-37cf.onrender.com",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "eventId",
+      "value": "event-demo-001",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "paymentIntentId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "📋 Setup",
+      "item": [
+        {
+          "name": "0️⃣ Wake Up Backend",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Check if backend is awake",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('✅ Backend is ONLINE', function() {",
+                  "        pm.expect(pm.response.json().status).to.equal('ok');",
+                  "    });",
+                  "    console.log('🟢 Backend is warm and ready!');",
+                  "} else {",
+                  "    pm.test('⚠️ Backend may be waking up', function() {",
+                  "        // Still pass - might be cold starting",
+                  "    });",
+                  "    console.log('🟡 Backend might be cold starting. Wait 30s and retry.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "**🎤 Say:** \"Let me verify our backend is online...\"\n\n**⏱️ Note:** First request may take 30-60 seconds if server was sleeping.\n\n**💡 Show:** The `status: ok` response"
+          }
+        },
+        {
+          "name": "1️⃣ Seed Demo Data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    var data = pm.response.json();",
+                  "    if (data.success) {",
+                  "        pm.test('✅ Demo data created', function() {",
+                  "            pm.expect(data.success).to.be.true;",
+                  "        });",
+                  "        console.log('🌱 Demo users and event created!');",
+                  "        console.log('Users:', data.data.users.map(u => u.email).join(', '));",
+                  "        console.log('Event:', data.data.event.title);",
+                  "    } else {",
+                  "        pm.test('⚠️ Seed may have failed', function() {});",
+                  "        console.log('Error:', data.error);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dev/seed",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dev", "seed"]
+            },
+            "description": "**🔧 SETUP STEP:** Creates demo users and event\n\n**Creates:**\n- user-demo@kumele.com (user)\n- host-demo@kumele.com (host)\n- admin-demo@kumele.com (admin)\n- Demo Meditation Workshop event (₹500)"
+          }
+        },
+        {
+          "name": "Check Demo Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dev/check",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dev", "check"]
+            },
+            "description": "Verify demo data exists"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🎬 Demo Flow",
+      "item": [
+        {
+          "name": "2️⃣ Login as User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var data = pm.response.json();",
+                  "    ",
+                  "    // Auto-save tokens",
+                  "    if (data.accessToken) {",
+                  "        pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "        pm.collectionVariables.set('refreshToken', data.refreshToken);",
+                  "        console.log('🔐 Token saved automatically!');",
+                  "    }",
+                  "    ",
+                  "    if (data.user && data.user.id) {",
+                  "        pm.collectionVariables.set('userId', data.user.id);",
+                  "    }",
+                  "    ",
+                  "    pm.test('✅ Login successful', function() {",
+                  "        pm.expect(data.accessToken).to.exist;",
+                  "    });",
+                  "    ",
+                  "    pm.test('✅ Token auto-saved', function() {",
+                  "        pm.expect(pm.collectionVariables.get('accessToken')).to.not.be.empty;",
+                  "    });",
+                  "} else if (pm.response.code === 401) {",
+                  "    pm.test('❌ Login failed - check password', function() {",
+                  "        pm.expect.fail('Invalid credentials');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user-demo@kumele.com\",\n  \"password\": \"Demo@1234\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "**🎤 Say:** \"I'm logging in as a regular user who wants to join an event...\"\n\n**💡 Point to:**\n- The JWT accessToken in response\n- \"Notice the token was automatically saved by Postman\""
+          }
+        },
+        {
+          "name": "3️⃣ View Demo Event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var data = pm.response.json();",
+                  "    ",
+                  "    pm.test('✅ Event retrieved', function() {",
+                  "        pm.expect(data.title).to.include('Meditation');",
+                  "    });",
+                  "    ",
+                  "    pm.test('💰 Price is ₹500', function() {",
+                  "        pm.expect(data.price).to.equal(500);",
+                  "    });",
+                  "    ",
+                  "    pm.test('🟢 Event is ACTIVE', function() {",
+                  "        pm.expect(data.status).to.equal('ACTIVE');",
+                  "    });",
+                  "    ",
+                  "    console.log('Event:', data.title);",
+                  "    console.log('Price: ₹' + data.price);",
+                  "    console.log('Host:', data.host?.displayName || 'Demo Host');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}"]
+            },
+            "description": "**🎤 Say:** \"Now let's look at an event the user wants to join...\"\n\n**💡 Point to:**\n- `price: 500` (₹500)\n- `status: \"ACTIVE\"`\n- `host` information\n\n**🎤 Say:** \"This event costs ₹500. Let's join and pay...\""
+          }
+        },
+        {
+          "name": "4️⃣ Join Event (Request Spot)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var data = pm.response.json();",
+                  "    ",
+                  "    pm.test('✅ Join request processed', function() {",
+                  "        pm.expect(data).to.exist;",
+                  "    });",
+                  "    ",
+                  "    console.log('Join status:', data.status || data.join?.status);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", "join"]
+            },
+            "description": "**🎤 Say:** \"The user clicks 'Join Event' - this reserves their spot...\"\n\n**💡 Point to:**\n- Join status (REQUESTED → MATCHED → RESERVED)"
+          }
+        },
+        {
+          "name": "5️⃣ Create Payment (Escrow)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var data = pm.response.json();",
+                  "    ",
+                  "    // Save payment intent ID",
+                  "    if (data.paymentIntent?.id) {",
+                  "        pm.collectionVariables.set('paymentIntentId', data.paymentIntent.id);",
+                  "    }",
+                  "    ",
+                  "    pm.test('✅ Payment intent created', function() {",
+                  "        pm.expect(data.clientSecret || data.paymentIntent).to.exist;",
+                  "    });",
+                  "    ",
+                  "    if (data.escrow) {",
+                  "        pm.test('🔒 Escrow status: HELD', function() {",
+                  "            pm.expect(data.escrow.status).to.equal('HELD');",
+                  "        });",
+                  "        console.log('💰 Escrow Status:', data.escrow.status);",
+                  "        console.log('📅 Release At:', data.escrow.releaseAt);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"{{eventId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/event",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "event"]
+            },
+            "description": "**🎤 Say:** \"Here's where the magic happens. When a user pays, the money goes into ESCROW - it's held securely by Stripe, not released to the host yet.\"\n\n**💡 Point to:**\n- `escrow.status: \"HELD\"`\n- `releaseAt` date (7 days after event ends)\n\n**⭐ KEY MOMENT:** Now switch to Stripe Dashboard → Payments to show the payment!"
+          }
+        },
+        {
+          "name": "6️⃣ Self Check-in (GPS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var data = pm.response.json();",
+                  "    ",
+                  "    pm.test('✅ Check-in successful', function() {",
+                  "        pm.expect(data.success || data.checkin).to.exist;",
+                  "    });",
+                  "    ",
+                  "    if (data.checkin) {",
+                  "        console.log('📍 Method:', data.checkin.method);",
+                  "        console.log('📏 Distance:', data.checkin.distanceKm, 'km');",
+                  "    }",
+                  "    ",
+                  "    if (data.escrow?.attendanceVerified) {",
+                  "        pm.test('🎫 Attendance verified!', function() {",
+                  "            pm.expect(data.escrow.attendanceVerified).to.be.true;",
+                  "        });",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestLat\": 19.0600,\n  \"guestLng\": 72.8660\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/checkin/self",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", "checkin", "self"]
+            },
+            "description": "**🎤 Say:** \"Now the user arrives at the event. They can check in using GPS...\"\n\n**💡 Point to:**\n- `distanceKm` (user is within 2km of venue)\n- `attendanceVerified: true` - This is a KEY condition for escrow release!\n\n**🎤 Say:** \"The check-in verified the user is at the venue. This is one of the conditions for escrow release.\""
+          }
+        },
+        {
+          "name": "7️⃣ Get Escrow Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var data = pm.response.json();",
+                  "    ",
+                  "    pm.test('🔒 Escrow details retrieved', function() {",
+                  "        pm.expect(data.status || data.escrow?.status).to.exist;",
+                  "    });",
+                  "    ",
+                  "    console.log('Escrow Status:', data.status);",
+                  "    console.log('Attendance Verified:', data.attendanceVerified);",
+                  "    console.log('Release At:', data.releaseAt);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{paymentIntentId}}/escrow",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{paymentIntentId}}", "escrow"]
+            },
+            "description": "**🎤 Say:** \"Let me check the current escrow status...\"\n\n**💡 Point to:**\n- `status: \"HELD\"`\n- `attendanceVerified: true`\n- `releaseAt` date"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔄 Alternative Flows",
+      "item": [
+        {
+          "name": "Login as Host",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var data = pm.response.json();",
+                  "    if (data.accessToken) {",
+                  "        pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "        pm.collectionVariables.set('refreshToken', data.refreshToken);",
+                  "        console.log('🔐 Host token saved!');",
+                  "    }",
+                  "    pm.test('✅ Host login successful', function() {",
+                  "        pm.expect(data.accessToken).to.exist;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"host-demo@kumele.com\",\n  \"password\": \"Demo@1234\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Login as host to demonstrate cancel/refund flow"
+          }
+        },
+        {
+          "name": "Login as Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var data = pm.response.json();",
+                  "    if (data.accessToken) {",
+                  "        pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "        pm.collectionVariables.set('refreshToken', data.refreshToken);",
+                  "        console.log('🔐 Admin token saved!');",
+                  "    }",
+                  "    pm.test('✅ Admin login successful', function() {",
+                  "        pm.expect(data.accessToken).to.exist;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin-demo@kumele.com\",\n  \"password\": \"Demo@1234\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Login as admin for administrative operations"
+          }
+        },
+        {
+          "name": "Cancel Event (Refund)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var data = pm.response.json();",
+                  "    ",
+                  "    pm.test('✅ Event cancelled', function() {",
+                  "        pm.expect(data.success || data.cancelled).to.exist;",
+                  "    });",
+                  "    ",
+                  "    if (data.refunds) {",
+                  "        pm.test('💸 Refunds processed', function() {",
+                  "            pm.expect(data.refunds).to.be.an('array');",
+                  "        });",
+                  "        console.log('Refunds:', data.refunds.length);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Demo cancellation - testing refund flow\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", "cancel"]
+            },
+            "description": "**⚠️ Must be logged in as HOST first!**\n\n**🎤 Say:** \"But what if the host needs to cancel? Let me show you the refund flow...\"\n\n**💡 Point to:**\n- `refunds` array showing all users refunded\n- Each refund shows amount and status\n\n**⭐ Then show:** Stripe Dashboard → Payments → See the refund!"
+          }
+        },
+        {
+          "name": "Host Check-in Guest (QR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestUserId\": \"user-demo-001\",\n  \"note\": \"Demo check-in\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/checkin/host-scan",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", "checkin", "host-scan"]
+            },
+            "description": "Alternative check-in method: Host scans guest QR code"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔧 Debug/Cleanup",
+      "item": [
+        {
+          "name": "Delete Demo Data",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dev/seed",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dev", "seed"]
+            },
+            "description": "Clean up all demo data after presentation"
+          }
+        },
+        {
+          "name": "Re-seed Demo Data",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dev/seed",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dev", "seed"]
+            },
+            "description": "Reset demo data if something went wrong"
+          }
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global pre-request script",
+          "console.log('🚀 Calling:', pm.request.name);"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test script",
+          "if (pm.response.code >= 400) {",
+          "    console.log('⚠️ Error:', pm.response.code, pm.response.status);",
+          "    try {",
+          "        console.log('Details:', pm.response.json());",
+          "    } catch(e) {}",
+          "}"
+        ]
+      }
+    }
+  ]
+}

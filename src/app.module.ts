@@ -34,6 +34,9 @@ import { AdminModule } from './modules/admin/admin.module';
 import { UtilitiesModule } from './modules/utilities/utilities.module';
 import { SupportModule } from './modules/support/support.module';
 
+// ⚠️ TEMPORARY: Dev module for demo seeding - REMOVE AFTER DEMO
+import { DevModule } from './modules/dev/dev.module';
+
 // Redis cache store
 import { redisStore } from 'cache-manager-ioredis-yet';
 
@@ -122,6 +125,9 @@ import { redisStore } from 'cache-manager-ioredis-yet';
     AdminModule,
     UtilitiesModule,
     SupportModule,
+
+    // ⚠️ TEMPORARY: Dev module for demo - REMOVE AFTER DEMO
+    DevModule,
   ],
   providers: [
     // Global rate limiting guard
