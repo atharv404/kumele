@@ -323,9 +323,10 @@ export class DevSeedController {
         amount: amountMinor,
         currency: 'usd',
         customer: stripeCustomerId,
-        capture_method: 'automatic',
+        payment_method_types: ['card'], // Only card payments, no redirects
+        payment_method: 'pm_card_visa', // Stripe test card
         confirm: true, // Auto-confirm for demo
-        payment_method: 'pm_card_visa', // Test card
+        off_session: true, // No customer present
         metadata: {
           eventId: event.id,
           userId: user.id,
