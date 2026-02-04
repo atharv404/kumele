@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { DevSeedController } from './dev-seed.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PasswordService } from '../auth/services/password.service';
@@ -10,7 +11,7 @@ import { PasswordService } from '../auth/services/password.service';
  * Also remove from app.module.ts imports
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, ConfigModule],
   controllers: [DevSeedController],
   providers: [PasswordService],
 })

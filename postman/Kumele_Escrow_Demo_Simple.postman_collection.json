@@ -1,0 +1,87 @@
+{
+  "info": {
+    "name": "🎯 Kumele Escrow Demo (Simple)",
+    "description": "4-step demo of the escrow payment flow",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://kumele-api-37cf.onrender.com/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "0️⃣ Seed Demo Data",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/dev/seed",
+          "host": ["{{baseUrl}}"],
+          "path": ["dev", "seed"]
+        }
+      }
+    },
+    {
+      "name": "1️⃣ Simulate Payment + Escrow",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/dev/escrow/simulate",
+          "host": ["{{baseUrl}}"],
+          "path": ["dev", "escrow", "simulate"]
+        }
+      }
+    },
+    {
+      "name": "2️⃣ Check-In (Verify Attendance)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/dev/escrow/checkin",
+          "host": ["{{baseUrl}}"],
+          "path": ["dev", "escrow", "checkin"]
+        }
+      }
+    },
+    {
+      "name": "3️⃣ Release Escrow to Host",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/dev/escrow/release",
+          "host": ["{{baseUrl}}"],
+          "path": ["dev", "escrow", "release"]
+        }
+      }
+    },
+    {
+      "name": "📊 Check Escrow Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/dev/escrow/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["dev", "escrow", "status"]
+        }
+      }
+    },
+    {
+      "name": "🗑️ Reset (Delete Demo Data)",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/dev/seed",
+          "host": ["{{baseUrl}}"],
+          "path": ["dev", "seed"]
+        }
+      }
+    }
+  ]
+}

@@ -1,8 +1,11 @@
 import { Controller, Post, Get, Delete } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PasswordService } from '../auth/services/password.service';
 import { Public } from '../../common/decorators/public.decorator';
+import Stripe from 'stripe';
+import { Decimal } from '@prisma/client/runtime/library';
 
 /**
  * ⚠️ TEMPORARY CONTROLLER FOR DEMO PURPOSES ONLY
@@ -17,10 +20,18 @@ import { Public } from '../../common/decorators/public.decorator';
 @ApiTags('dev')
 @Controller('dev')
 export class DevSeedController {
+  private stripe: Stripe | null = null;
+
   constructor(
     private prisma: PrismaService,
     private passwordService: PasswordService,
-  ) {}
+    private configService: ConfigService,
+  ) {
+    const stripeKey = this.configService.get<string>('STRIPE_SECRET_KEY');
+    if (stripeKey) {
+      this.stripe = new Stripe(stripeKey);
+    }
+  }
 
   @Post('seed')
   @Public()
@@ -240,14 +251,21 @@ export class DevSeedController {
   }
 
   // ============================================
-  // DEMO ESCROW SIMULATION ENDPOINTS
+  // DEMO ESCROW SIMULATION ENDPOINTS (REAL STRIPE!)
   // ============================================
   
   @Post('escrow/simulate')
   @Public()
-  @ApiOperation({ summary: '🎯 DEMO: Simulate complete escrow payment flow' })
+  @ApiOperation({ summary: '🎯 DEMO: Create REAL Stripe payment + escrow flow' })
   async simulateEscrowFlow() {
     try {
+      if (!this.stripe) {
+        return {
+          success: false,
+          error: 'Stripe not configured. Set STRIPE_SECRET_KEY in environment.'
+        };
+      }
+
       // Step 1: Verify demo data exists
       const user = await this.prisma.user.findUnique({
         where: { email: 'user-demo@kumele.com' }
@@ -282,22 +300,52 @@ export class DevSeedController {
         });
       }
 
-      // Step 3: Create mock PaymentIntent
-      const paymentId = `pi_demo_${Date.now()}`;
+      // Step 3: Create or get Stripe Customer
+      let stripeCustomerId = user.stripeCustomerId;
+      if (!stripeCustomerId) {
+        const customer = await this.stripe.customers.create({
+          email: user.email,
+          name: user.displayName || 'Demo User',
+          metadata: { userId: user.id, demo: 'true' }
+        });
+        stripeCustomerId = customer.id;
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { stripeCustomerId }
+        });
+      }
+
+      // Step 4: Create REAL Stripe PaymentIntent
       const amountMinor = 4000; // $40.00 in cents
-      const payment = await this.prisma.paymentIntent.create({
-        data: {
-          stripeId: paymentId,
-          userId: user.id,
+      const stripePaymentIntent = await this.stripe.paymentIntents.create({
+        amount: amountMinor,
+        currency: 'usd',
+        customer: stripeCustomerId,
+        capture_method: 'automatic',
+        confirm: true, // Auto-confirm for demo
+        payment_method: 'pm_card_visa', // Test card
+        metadata: {
           eventId: event.id,
-          amount: amountMinor / 100, // Decimal amount
-          amountMinor: amountMinor,
-          currency: 'USD',
-          status: 'SUCCEEDED',
+          userId: user.id,
+          demo: 'true',
+          type: 'escrow_demo'
         }
       });
 
-      // Step 4: Create Escrow record (HELD state)
+      // Step 5: Save PaymentIntent to DB
+      const payment = await this.prisma.paymentIntent.create({
+        data: {
+          stripeId: stripePaymentIntent.id,
+          userId: user.id,
+          eventId: event.id,
+          amount: new Decimal(amountMinor / 100),
+          amountMinor: amountMinor,
+          currency: 'USD',
+          status: stripePaymentIntent.status === 'succeeded' ? 'SUCCEEDED' : 'PENDING',
+        }
+      });
+
+      // Step 6: Create Escrow record (HELD state)
       const eventEndAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours from now
       const escrow = await this.prisma.escrow.create({
         data: {
@@ -315,7 +363,8 @@ export class DevSeedController {
 
       return {
         success: true,
-        message: '✅ Escrow flow simulated! Payment captured and held in escrow.',
+        message: '✅ REAL Stripe payment created! Check your Stripe Dashboard.',
+        stripePaymentUrl: `https://dashboard.stripe.com/test/payments/${stripePaymentIntent.id}`,
         demo: {
           step1_join: {
             eventJoinId: eventJoin.id,
